@@ -1,106 +1,224 @@
 "use client";
 
-import { useMemo } from "react";
-import { startOfWeek, addDays, isSameDay, isToday, format } from "date-fns";
+import { useMemo, useState, useEffect } from "react";
+import { startOfWeek, addDays, isSameDay, isToday } from "date-fns";
 import type { TemporalItemWithRelations } from "@/types";
-
-interface WorkloadChartProps {
-  items: TemporalItemWithRelations[];
-}
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-export default function WorkloadChart({ items }: WorkloadChartProps) {
-  const { bars } = useMemo(() => {
+export default function WorkloadChart({ items }: { items: TemporalItemWithRelations[] }) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  const [entered, setEntered] = useState(false);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => requestAnimationFrame(() => setEntered(true)));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const bars = useMemo(() => {
     const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-    const bars = DAYS.map((label, i) => {
+    return DAYS.map((label, i) => {
       const date = addDays(weekStart, i);
       const count = items.filter(
         it => it.status !== "COMPLETED" && it.status !== "ARCHIVED" && isSameDay(new Date(it.dueDate), date)
       ).length;
-      return { label, date, count, isToday: isToday(date) };
+      return { label, count, today: isToday(date) };
     });
-    return { bars };
   }, [items]);
 
   const maxCount = Math.max(...bars.map(b => b.count), 1);
-  // Scale to hours: map maxCount → 8h
-  const toHours = (c: number) => (c / maxCount) * 8;
-  const maxH = 8;
+  const toHours = (c: number) => ((c / maxCount) * 8).toFixed(1);
 
-  const yLabels = ["8h", "6h", "4h", "2h", "0h"];
-  const yPcts   = [100, 75, 50, 25, 0];
+  const hBar = hovered !== null ? bars[hovered] : null;
 
   return (
     <>
       <style>{`
         .wl-card {
-          background: var(--panel); border: 1px solid var(--line);
-          border-radius: 18px; padding: 18px 18px 16px;
+          background: var(--panel);
+          border: 1px solid var(--line);
+          border-radius: 18px;
+          padding: 18px 18px 16px;
           box-shadow: var(--shadow-sm);
+          transition: box-shadow 0.35s ease;
         }
-        .wl-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .wl-card:hover { box-shadow: 0 6px 28px rgba(0,0,0,0.08); }
+
+        .wl-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 8px;
+        }
         .wl-title { font-size: 15px; font-weight: 700; color: var(--ink); }
-        .wl-bars {
-          display: grid; grid-template-columns: 16px 1fr;
-          gap: 10px; height: 156px; margin-top: 4px;
+        .wl-hover-info {
+          font-size: 12px;
+          color: var(--indigo);
+          font-weight: 600;
+          transition: opacity 0.2s ease;
         }
-        .wl-y { display: flex; flex-direction: column; justify-content: space-between; font-size: 10.5px; color: var(--mut-2); text-align: right; padding-bottom: 18px; }
-        .wl-bars-wrap { position: relative; }
-        .wl-grid-lines { position: absolute; inset: 0 0 18px 0; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
-        .wl-grid-lines i { height: 1px; background: #f1f2f7; display: block; }
-        .wl-bars-grid {
-          position: absolute; inset: 0 0 18px 0;
-          display: grid; grid-template-columns: repeat(7, 1fr);
-          align-items: end; gap: 6px; padding: 0 2px;
+
+        .wl-chart {
+          display: grid;
+          grid-template-columns: 22px 1fr;
+          gap: 8px;
+          height: 150px;
+          margin-top: 4px;
         }
-        .wl-bar { width: 70%; margin: 0 auto; border-radius: 6px 6px 2px 2px; background: var(--indigo-soft); position: relative; }
-        .wl-bar.active { background: var(--indigo); }
-        .wl-bar .val {
-          position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
-          font-size: 11px; font-weight: 700; color: var(--ink); white-space: nowrap;
+        .wl-y {
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          font-size: 10.5px;
+          color: var(--mut-2);
+          text-align: right;
+          padding-bottom: 20px;
+          user-select: none;
         }
+
+        /* The plot area is the only positioned ancestor — overflow hidden keeps bars inside */
+        .wl-plot {
+          position: relative;
+          overflow: hidden;
+        }
+
+        .wl-gridlines {
+          position: absolute;
+          inset: 0 0 20px 0;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          pointer-events: none;
+          z-index: 0;
+        }
+        .wl-gridlines i { height: 1px; background: #f1f2f7; display: block; }
+
+        .wl-bars-row {
+          position: absolute;
+          inset: 0 0 20px 0;
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+          align-items: end;
+          gap: 5px;
+          padding: 0 3px;
+          z-index: 1;
+        }
+
+        /* Each column is the full height of the bar area */
+        .wl-bar-col {
+          height: 100%;
+          position: relative;
+          cursor: pointer;
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+        }
+
+        /* Value label sits at a fixed top inside the column, never pushes bar down */
+        .wl-bar-val {
+          position: absolute;
+          top: 2px;
+          left: 0; right: 0;
+          text-align: center;
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--indigo);
+          pointer-events: none;
+          transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
+        }
+
+        .wl-bar {
+          width: 68%;
+          border-radius: 6px 6px 3px 3px;
+          transition:
+            height 0.65s cubic-bezier(0.34,1.56,0.64,1),
+            opacity 0.22s ease,
+            background 0.2s ease,
+            transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
+          transform-origin: bottom center;
+        }
+
         .wl-x-axis {
-          position: absolute; bottom: 0; left: 0; right: 0;
-          grid-column: 2;
-          display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
-          font-size: 11px; color: var(--mut); text-align: center;
+          position: absolute;
+          bottom: 0; left: 0; right: 0;
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+          gap: 5px;
+          font-size: 11px;
+          color: var(--mut);
+          text-align: center;
+          padding: 0 3px;
+          z-index: 1;
         }
-        .wl-x-axis span.cur { color: var(--indigo-deep); font-weight: 700; }
+        .wl-x-axis span { transition: color 0.2s ease; }
+        .wl-x-axis span.today { color: var(--indigo-deep); font-weight: 700; }
+        .wl-x-axis span.lit   { color: var(--indigo); font-weight: 700; }
       `}</style>
+
       <div className="wl-card">
         <div className="wl-head">
           <div className="wl-title">Weekly Workload</div>
-        </div>
-        <div className="wl-bars">
-          <div className="wl-y">
-            {yLabels.map(l => <span key={l}>{l}</span>)}
+          <div className="wl-hover-info" style={{ opacity: hBar ? 1 : 0 }}>
+            {hBar ? `${hBar.count} item${hBar.count !== 1 ? "s" : ""} · ${toHours(hBar.count)}h` : "—"}
           </div>
-          <div className="wl-bars-wrap">
-            <div className="wl-grid-lines">
-              <i/><i/><i/><i/><i/>
-            </div>
-            <div className="wl-bars-grid">
+        </div>
+
+        <div className="wl-chart">
+          <div className="wl-y">
+            {["8h","6h","4h","2h","0h"].map(l => <span key={l}>{l}</span>)}
+          </div>
+
+          <div className="wl-plot" onMouseLeave={() => setHovered(null)}>
+            <div className="wl-gridlines"><i/><i/><i/><i/><i/></div>
+
+            <div className="wl-bars-row">
               {bars.map((b, i) => {
-                const heightPct = maxCount > 0 ? (b.count / maxCount) * 100 : 0;
-                const hours = toHours(b.count);
+                const heightPct = (b.count / maxCount) * 100;
+                const isLit    = b.today || hovered === i;
+                const isDimmed = hovered !== null && hovered !== i;
+
                 return (
                   <div
                     key={i}
-                    className={`wl-bar${b.isToday ? " active" : ""}`}
-                    style={{ height: `${Math.max(4, heightPct)}%` }}
-                    title={`${b.label}: ${b.count} item${b.count !== 1 ? "s" : ""}`}
+                    className="wl-bar-col"
+                    onMouseEnter={() => setHovered(i)}
                   >
-                    {b.isToday && b.count > 0 && (
-                      <span className="val">{hours.toFixed(1)}h</span>
-                    )}
+                    {/* Label fixed at top of column, never in flow with bar */}
+                    <div
+                      className="wl-bar-val"
+                      style={{
+                        opacity: hovered === i && b.count > 0 ? 1 : 0,
+                        transform: hovered === i ? "translateY(0)" : "translateY(5px)",
+                      }}
+                    >
+                      {toHours(b.count)}h
+                    </div>
+
+                    <div
+                      className="wl-bar"
+                      style={{
+                        height: entered ? `${Math.max(b.count > 0 ? 8 : 2, heightPct)}%` : "0%",
+                        background: isLit ? "var(--indigo)" : "var(--indigo-soft)",
+                        opacity: isDimmed ? 0.28 : 1,
+                        transform: hovered === i ? "scaleX(1.08)" : "scaleX(1)",
+                        transition: [
+                          `height 0.65s cubic-bezier(0.34,1.56,0.64,1) ${entered ? "0s" : `${i * 0.07}s`}`,
+                          "opacity 0.22s ease",
+                          "background 0.2s ease",
+                          "transform 0.22s cubic-bezier(0.34,1.56,0.64,1)",
+                        ].join(", "),
+                      }}
+                    />
                   </div>
                 );
               })}
             </div>
+
             <div className="wl-x-axis">
               {bars.map((b, i) => (
-                <span key={i} className={b.isToday ? "cur" : ""}>{b.label}</span>
+                <span key={i} className={b.today ? "today" : hovered === i ? "lit" : ""}>
+                  {b.label}
+                </span>
               ))}
             </div>
           </div>

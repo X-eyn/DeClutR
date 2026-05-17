@@ -43,32 +43,201 @@ export default function StatCards({ stats, items }: StatCardsProps) {
   const monthTotal     = monthDeadlines.length + monthCompleted.length;
   const monthPct       = monthTotal > 0 ? Math.round((monthCompleted.length / monthTotal) * 100) : 0;
 
+  const overdueCount = active.filter(i => interpretTimeLeft(new Date(i.dueDate)).urgency === "overdue").length;
+  const nextThreeCritical = active
+    .slice()
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+    .filter(i => {
+      const u = interpretTimeLeft(new Date(i.dueDate)).urgency;
+      return u === "overdue" || u === "critical" || u === "high";
+    })
+    .slice(0, 3);
+
+  const todayByType = [
+    { label: "Events", count: todayEvents.filter(i => i.type === "EVENT").length, color: "var(--indigo)" },
+    { label: "Tasks",  count: todayTasks.filter(i => i.type === "TASK").length,   color: "var(--violet)" },
+    { label: "Due",    count: todayTasks.filter(i => i.type === "DEADLINE").length, color: "var(--red)" },
+  ].filter(t => t.count > 0);
+
+  const nextTodayItem = active
+    .filter(i => isToday(new Date(i.dueDate)))
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
+
+  const weekRemaining = weekTasks.length;
+  const weekDaysLeft  = 5 - new Date().getDay() + (new Date().getDay() === 0 ? -2 : new Date().getDay() === 6 ? -1 : 0);
+
+  const monthOverdue  = monthDeadlines.filter(i => interpretTimeLeft(new Date(i.dueDate)).urgency === "overdue").length;
+  const monthUpcoming = monthDeadlines.filter(i => interpretTimeLeft(new Date(i.dueDate)).urgency !== "overdue").length;
+
   return (
     <>
       <style>{`
-        .stat-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+        .stat-row {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 10px;
+          height: 100%;
+          align-items: stretch;
+        }
         .stat {
-          background: var(--panel); border: 1px solid var(--line);
-          border-radius: 18px; padding: 16px 14px;
-          display: flex; flex-direction: column; gap: 10px;
-          box-shadow: var(--shadow-sm); min-height: 165px; min-width: 0;
+          background: var(--panel);
+          border: 1px solid var(--line);
+          border-radius: 18px;
+          padding: 16px;
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          min-height: 0;
+          min-width: 0;
+          overflow: hidden;
+          box-shadow: var(--shadow-sm);
+          box-sizing: border-box;
         }
-        .stat-header { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
-        .stat-headtxt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+        /* ── Header ── */
+        .stat-header {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-shrink: 0;
+          min-width: 0;
+        }
         .stat-ico {
-          width: 40px; height: 40px; border-radius: 12px;
-          display: grid; place-items: center; flex-shrink: 0;
+          width: 38px; height: 38px;
+          border-radius: 11px;
+          display: grid; place-items: center;
+          flex-shrink: 0;
         }
-        .stat-label { font-size: 11.5px; color: var(--mut); font-weight: 500; line-height: 1.25; }
-        .stat-value { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; margin-top: -2px; line-height: 1.1; color: var(--ink); }
-        .stat-value .unit { font-weight: 600; font-size: 16px; color: var(--ink-2); margin-left: 3px; }
-        .stat-meta { font-size: 12.5px; color: var(--mut); }
-        .stat-meta.danger { color: var(--red); font-weight: 600; }
-        .stat-link { color: var(--indigo); font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
-        .stat-progress { height: 5px; background: #f1f2f7; border-radius: 99px; overflow: hidden; }
-        .stat-progress > span { display: block; height: 100%; border-radius: 99px; }
-        .stat-pct-row { display: flex; align-items: center; gap: 8px; }
-        .stat-pct-label { font-size: 11px; font-weight: 700; white-space: nowrap; }
+        .stat-headtxt {
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+          min-width: 0;
+          flex: 1;
+          overflow: hidden;
+        }
+        .stat-label {
+          font-size: 11px;
+          color: var(--mut);
+          font-weight: 500;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .stat-value {
+          font-size: 20px;
+          font-weight: 800;
+          letter-spacing: -0.02em;
+          line-height: 1.15;
+          color: var(--ink);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .stat-value .unit {
+          font-weight: 600;
+          font-size: 14px;
+          color: var(--ink-2);
+          margin-left: 2px;
+        }
+
+        /* ── Divider ── */
+        .stat-sep {
+          height: 1px;
+          background: var(--line);
+          flex-shrink: 0;
+          margin: 10px 0;
+        }
+
+        /* ── Body ── */
+        .stat-body {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          min-height: 0;
+          overflow: hidden;
+        }
+
+        /* mini text */
+        .stat-meta {
+          font-size: 11.5px;
+          color: var(--mut);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .stat-link {
+          color: var(--indigo);
+          font-weight: 600;
+          font-size: 12.5px;
+          display: inline-flex;
+          align-items: center;
+          gap: 3px;
+          text-decoration: none;
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
+
+        /* pill */
+        .stat-pill {
+          display: inline-flex;
+          align-items: center;
+          padding: 1px 7px;
+          border-radius: 99px;
+          font-size: 10.5px;
+          font-weight: 700;
+          flex-shrink: 0;
+          white-space: nowrap;
+        }
+
+        /* mini item list */
+        .stat-mini-list { display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+        .stat-mini-item {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 11.5px;
+          color: var(--ink-2);
+          overflow: hidden;
+        }
+        .stat-mini-item span:last-child {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .stat-mini-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+
+        /* type chips */
+        .stat-type-row { display: flex; gap: 5px; overflow: hidden; }
+        .stat-type-chip {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          background: var(--surface, #f7f8fc);
+          border-radius: 9px;
+          padding: 5px 6px;
+          gap: 1px;
+          min-width: 0;
+          overflow: hidden;
+        }
+        .stat-type-chip-val { font-size: 14px; font-weight: 800; line-height: 1; }
+        .stat-type-chip-lbl { font-size: 10px; color: var(--mut); font-weight: 500; white-space: nowrap; }
+
+        /* 3-stat row */
+        .stat-three { display: flex; align-items: flex-start; gap: 0; overflow: hidden; }
+        .stat-three-item { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow: hidden; }
+        .stat-three-val { font-size: 17px; font-weight: 800; color: var(--ink); line-height: 1; }
+        .stat-three-lbl { font-size: 10px; color: var(--mut); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .stat-three-div { width: 1px; background: var(--line); align-self: stretch; margin: 0 8px; flex-shrink: 0; }
+
+        /* progress */
+        .stat-progress-wrap { display: flex; flex-direction: column; gap: 4px; }
+        .stat-progress-row { display: flex; justify-content: space-between; align-items: center; }
+        .stat-pct-lbl { font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+        .stat-bar { height: 5px; background: #edeef3; border-radius: 99px; overflow: hidden; }
+        .stat-bar > span { display: block; height: 100%; border-radius: 99px; }
       `}</style>
       <div className="stat-row">
 
@@ -76,29 +245,49 @@ export default function StatCards({ stats, items }: StatCardsProps) {
         <div className="stat">
           <div className="stat-header">
             <div className="stat-ico" style={{ background: "var(--red-tint)", color: "var(--red)" }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 22h14"/>
-                <path d="M5 2h14"/>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 22h14"/><path d="M5 2h14"/>
                 <path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/>
                 <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>
               </svg>
             </div>
             <div className="stat-headtxt">
-              <div className="stat-label">Next Critical Deadline</div>
+              <div className="stat-label">Critical Deadline</div>
               {nextCritical ? (
-                <div className="stat-value">
-                  {hoursLeft}h <span style={{ fontSize: 18 }}>{minsRemainder}m</span>
-                </div>
+                <div className="stat-value">{hoursLeft}h <span style={{ fontSize: 15 }}>{minsRemainder}m</span></div>
               ) : (
-                <div className="stat-value" style={{ fontSize: 17 }}>All clear</div>
+                <div className="stat-value" style={{ fontSize: 15 }}>All clear</div>
               )}
             </div>
+            {overdueCount > 0 && (
+              <span className="stat-pill" style={{ background: "var(--red-tint)", color: "var(--red)" }}>
+                {overdueCount} overdue
+              </span>
+            )}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: "auto" }}>
-            <div className="stat-meta">{nextCritical ? nextCritical.title.slice(0, 24) + (nextCritical.title.length > 24 ? "…" : "") : "No critical items"}</div>
-            <div className={`stat-meta${nextCritical && criticalTime?.urgency === "overdue" ? " danger" : ""}`}>
-              {criticalTime ? criticalTime.label : "—"}
-            </div>
+
+          <div className="stat-sep" />
+
+          <div className="stat-body">
+            {nextThreeCritical.length > 0 ? (
+              <>
+                <div className="stat-meta">Urgent items</div>
+                <div className="stat-mini-list">
+                  {nextThreeCritical.map(item => {
+                    const u = interpretTimeLeft(new Date(item.dueDate)).urgency;
+                    const c = u === "overdue" ? "var(--red)" : u === "critical" ? "#f97316" : "#eab308";
+                    return (
+                      <div className="stat-mini-item" key={item.id}>
+                        <span className="stat-mini-dot" style={{ background: c }} />
+                        <span>{item.title}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="stat-meta">No urgent items right now</div>
+            )}
           </div>
         </div>
 
@@ -106,20 +295,39 @@ export default function StatCards({ stats, items }: StatCardsProps) {
         <div className="stat">
           <div className="stat-header">
             <div className="stat-ico" style={{ background: "var(--indigo-soft)", color: "var(--indigo)" }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="4" width="18" height="17" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/>
                 <line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/>
               </svg>
             </div>
             <div className="stat-headtxt">
               <div className="stat-label">Today&apos;s Schedule</div>
-              <div className="stat-value">
-                {todayEvents.length}<span className="unit">Events</span>
-              </div>
+              <div className="stat-value">{todayEvents.length}<span className="unit">items</span></div>
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: "auto" }}>
-            <div className="stat-meta">{todayTasks.length} Task{todayTasks.length !== 1 ? "s" : ""}</div>
+
+          <div className="stat-sep" />
+
+          <div className="stat-body">
+            {todayByType.length > 0 ? (
+              <div className="stat-type-row">
+                {todayByType.map(t => (
+                  <div className="stat-type-chip" key={t.label}>
+                    <span className="stat-type-chip-val" style={{ color: t.color }}>{t.count}</span>
+                    <span className="stat-type-chip-lbl">{t.label}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="stat-meta">Nothing scheduled today</div>
+            )}
+            {nextTodayItem && (
+              <div className="stat-mini-item" style={{ marginTop: 2 }}>
+                <span className="stat-mini-dot" style={{ background: "var(--indigo)" }} />
+                <span style={{ fontWeight: 600, color: "var(--ink)" }}>{nextTodayItem.title}</span>
+              </div>
+            )}
+            <div style={{ flex: 1 }} />
             <Link className="stat-link" href="/dashboard/calendar">View agenda →</Link>
           </div>
         </div>
@@ -128,24 +336,44 @@ export default function StatCards({ stats, items }: StatCardsProps) {
         <div className="stat">
           <div className="stat-header">
             <div className="stat-ico" style={{ background: "var(--green-tint)", color: "var(--green)" }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/>
               </svg>
             </div>
             <div className="stat-headtxt">
               <div className="stat-label">This Week</div>
-              <div className="stat-value">
-                {weekTasks.length}<span className="unit">Tasks</span>
-              </div>
+              <div className="stat-value">{weekTasks.length}<span className="unit">tasks</span></div>
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: "auto" }}>
-            <div className="stat-meta">{weekEvents.length} Event{weekEvents.length !== 1 ? "s" : ""}</div>
-            <div className="stat-pct-row">
-              <div className="stat-progress" style={{ flex: 1 }}>
+
+          <div className="stat-sep" />
+
+          <div className="stat-body">
+            <div className="stat-three">
+              <div className="stat-three-item">
+                <div className="stat-three-val" style={{ color: "var(--green)" }}>{weekCompleted.length}</div>
+                <div className="stat-three-lbl">Completed</div>
+              </div>
+              <div className="stat-three-div" />
+              <div className="stat-three-item">
+                <div className="stat-three-val">{weekRemaining}</div>
+                <div className="stat-three-lbl">Remaining</div>
+              </div>
+              <div className="stat-three-div" />
+              <div className="stat-three-item">
+                <div className="stat-three-val">{weekEvents.length}</div>
+                <div className="stat-three-lbl">Events</div>
+              </div>
+            </div>
+            <div style={{ flex: 1 }} />
+            <div className="stat-progress-wrap">
+              <div className="stat-progress-row">
+                <span className="stat-meta">{weekDaysLeft > 0 ? `${weekDaysLeft}d left` : "Last day"}</span>
+                <span className="stat-pct-lbl" style={{ color: "var(--green)" }}>{weekPct}% done</span>
+              </div>
+              <div className="stat-bar">
                 <span style={{ width: `${weekPct}%`, background: "var(--green)" }} />
               </div>
-              <span className="stat-pct-label" style={{ color: "var(--green)" }}>{weekPct}% completed</span>
             </div>
           </div>
         </div>
@@ -154,24 +382,44 @@ export default function StatCards({ stats, items }: StatCardsProps) {
         <div className="stat">
           <div className="stat-header">
             <div className="stat-ico" style={{ background: "var(--violet-soft)", color: "var(--violet)" }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
               </svg>
             </div>
             <div className="stat-headtxt">
               <div className="stat-label">This Month</div>
-              <div className="stat-value">
-                {monthDeadlines.length}<span className="unit">Deadlines</span>
-              </div>
+              <div className="stat-value">{monthDeadlines.length}<span className="unit">due</span></div>
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: "auto" }}>
-            <div className="stat-meta">{monthEvents.length} Event{monthEvents.length !== 1 ? "s" : ""}</div>
-            <div className="stat-pct-row">
-              <div className="stat-progress" style={{ flex: 1 }}>
+
+          <div className="stat-sep" />
+
+          <div className="stat-body">
+            <div className="stat-three">
+              <div className="stat-three-item">
+                <div className="stat-three-val" style={{ color: "var(--violet)" }}>{monthCompleted.length}</div>
+                <div className="stat-three-lbl">Done</div>
+              </div>
+              <div className="stat-three-div" />
+              <div className="stat-three-item">
+                <div className="stat-three-val" style={{ color: monthOverdue > 0 ? "var(--red)" : "var(--ink)" }}>{monthOverdue}</div>
+                <div className="stat-three-lbl">Overdue</div>
+              </div>
+              <div className="stat-three-div" />
+              <div className="stat-three-item">
+                <div className="stat-three-val">{monthEvents.length}</div>
+                <div className="stat-three-lbl">Events</div>
+              </div>
+            </div>
+            <div style={{ flex: 1 }} />
+            <div className="stat-progress-wrap">
+              <div className="stat-progress-row">
+                <span className="stat-meta">{monthUpcoming} upcoming</span>
+                <span className="stat-pct-lbl" style={{ color: "var(--violet)" }}>{monthPct}% done</span>
+              </div>
+              <div className="stat-bar">
                 <span style={{ width: `${monthPct}%`, background: "var(--violet)" }} />
               </div>
-              <span className="stat-pct-label" style={{ color: "var(--violet)" }}>{monthPct}% completed</span>
             </div>
           </div>
         </div>
