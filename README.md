@@ -1,36 +1,110 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# DeClutR — Temporal Dashboard
+
+A personal productivity dashboard for managing deadlines, tasks, events, and reminders with a focus on temporal clarity.
+
+## Features
+
+- **Dashboard overview** — stat cards, timeline gantt, agenda, deadline list, and insight widgets
+- **Calendar** — full month grid with item pills, day-panel drill-down, and item creation
+- **Tasks** — tabbed view (All / Active / Overdue / Completed) with checklist support and priority badges
+- **Reminders** — grouped by urgency (Overdue / Today / This Week / Later) with dismiss and edit
+- **Notes** — masonry grid with search
+- **Timeline** — gantt-style view of upcoming items
+- **Insights** — completion rates, type breakdown, and activity charts
+- **Settings** — profile, Google Calendar integration, preferences, and danger zone
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| Database | PostgreSQL via Supabase |
+| ORM | Prisma 6 |
+| Auth | NextAuth v5 (Google OAuth2) |
+| Styling | CSS custom properties (no external UI library) |
+| Date utils | date-fns |
 
 ## Getting Started
 
-First, run the development server:
+### 1. Clone and install
+
+```bash
+git clone https://github.com/X-eyn/DeClutR.git
+cd DeClutR
+npm install
+```
+
+### 2. Environment
+
+Copy `.env.example` to `.env.local` and fill in the values:
+
+```bash
+cp .env.example .env.local
+```
+
+Required variables:
+
+```
+DATABASE_URL=          # Supabase session-mode pooler (port 5432)
+DIRECT_URL=            # Supabase direct connection (port 5432, no pooler)
+NEXTAUTH_SECRET=       # Any random string (openssl rand -base64 32)
+NEXTAUTH_URL=          # http://localhost:3000
+GOOGLE_CLIENT_ID=      # From Google Cloud Console
+GOOGLE_CLIENT_SECRET=  # From Google Cloud Console
+```
+
+### 3. Database
+
+```bash
+npx prisma migrate deploy
+npx prisma generate
+```
+
+### 4. Run
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 5. Seed demo data
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Sign in, then hit the **"Load demo data"** button on the empty dashboard, or POST to `/api/seed`.
 
-## Learn More
+## Google OAuth Setup
 
-To learn more about Next.js, take a look at the following resources:
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
+2. Create an OAuth 2.0 Client ID (Web application)
+3. Add `http://localhost:3000/api/auth/callback/google` as an authorized redirect URI
+4. Enable the **Google Calendar API** and **Google Tasks API** in your project
+5. Paste the client ID and secret into `.env.local`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Project Structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+app/
+  dashboard/
+    calendar/       # Month-grid calendar
+    tasks/          # Task manager
+    reminders/      # Reminder manager
+    notes/          # Notes grid
+    insights/       # Analytics
+    settings/       # User settings
+    sync/           # Google sync & logs
+  api/
+    items/          # CRUD for temporal items
+    seed/           # Demo data endpoint
+    google/         # Google Calendar/Tasks integration
+components/
+  dashboard/
+    widgets/        # Stat cards, agenda, timeline, etc.
+lib/                # Prisma client, auth, time utilities
+prisma/
+  schema.prisma     # Data model
+types/              # Shared TypeScript types
+```
 
-## Deploy on Vercel
+## License
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT

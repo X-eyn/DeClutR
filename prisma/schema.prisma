@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── NextAuth models ───────────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+
+  temporalItems TemporalItem[]
+  syncLogs      SyncLog[]
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Core domain models ────────────────────────────────────────────────────
+
+enum ItemType {
+  DEADLINE
+  EVENT
+  REMINDER
+  TASK
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum Status {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+  OVERDUE
+}
+
+model TemporalItem {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  type        ItemType
+  priority    Priority @default(MEDIUM)
+  status      Status   @default(ACTIVE)
+
+  dueDate     DateTime
+  startDate   DateTime?
+  allDay      Boolean  @default(false)
+
+  // Recurrence (iCal RRULE format)
+  rrule       String?
+
+  // Google sync
+  googleCalendarEventId String?
+  googleTaskId          String?
+  lastSyncedAt          DateTime?
+
+  // Reminder settings (minutes before dueDate)
+  reminderMinutes Int[] @default([])
+
+  tags        Tag[]
+  checklists  ChecklistItem[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, dueDate])
+  @@index([userId, status])
+}
+
+model ChecklistItem {
+  id             String       @id @default(cuid())
+  temporalItemId String
+  temporalItem   TemporalItem @relation(fields: [temporalItemId], references: [id], onDelete: Cascade)
+
+  title       String
+  completed   Boolean  @default(false)
+  completedAt DateTime?
+  sortOrder   Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Tag {
+  id    String @id @default(cuid())
+  name  String
+  color String @default("#6366f1")
+
+  items TemporalItem[]
+
+  @@unique([name])
+}
+
+model SyncLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  action    String   // "CREATE_CALENDAR_EVENT" | "UPDATE_CALENDAR_EVENT" | "CREATE_TASK" | etc.
+  itemId    String?
+  itemTitle String?
+  status    String   // "SUCCESS" | "ERROR"
+  message   String?
+  metadata  Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
