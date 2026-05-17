@@ -12,19 +12,16 @@ interface QuickNotesProps {
 
 export default function QuickNotes({ items, onComplete, onAddItem }: QuickNotesProps) {
   const tasks = items
-    .filter(i => i.status !== "COMPLETED" && i.status !== "ARCHIVED")
+    .filter(i => i.type === "TASK" && i.status !== "COMPLETED" && i.status !== "ARCHIVED")
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
     .slice(0, 4);
 
-  const [completing, setCompleting] = useState<string | null>(null);
   const [done, setDone] = useState<Set<string>>(new Set());
 
   async function handleCheck(id: string) {
     if (done.has(id)) return;
-    setCompleting(id);
     setDone(prev => new Set(prev).add(id));
     await onComplete?.(id);
-    setCompleting(null);
   }
 
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import Modal from "@/components/ui/Modal";
 import ItemForm from "@/components/dashboard/ItemForm";
 import type { TemporalItemWithRelations, CreateItemInput } from "@/types";
@@ -14,24 +14,31 @@ export default function NotesPage() {
   const [editNote, setEditNote] = useState<TemporalItemWithRelations | null>(null);
   const [googleConnected, setGoogleConnected] = useState(false);
 
-  const fetchNotes = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/items?type=TASK");
-      const json = await res.json();
-      setNotes(json.items ?? []);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    fetchNotes();
+    let cancelled = false;
+
+    fetch("/api/items?type=TASK")
+      .then(res => res.json())
+      .then(json => {
+        if (cancelled) return;
+        const items = Array.isArray(json) ? json : json.items ?? [];
+        setNotes(items.filter((item: TemporalItemWithRelations) => item.status !== "ARCHIVED"));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
     fetch("/api/google/connect")
       .then(r => r.json())
-      .then(d => setGoogleConnected(d.connected ?? false))
+      .then(d => {
+        if (!cancelled) setGoogleConnected(d.connected ?? false);
+      })
       .catch(() => {});
-  }, [fetchNotes]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filteredNotes = notes.filter(n => {
     if (!search.trim()) return true;
@@ -281,7 +288,7 @@ export default function NotesPage() {
             </div>
             {search ? (
               <>
-                <div className="notes-empty-title">No notes match "{search}"</div>
+                <div className="notes-empty-title">No notes match &quot;{search}&quot;</div>
                 <div className="notes-empty-sub">Try a different search term or clear the filter.</div>
                 <button className="notes-empty-btn" onClick={() => setSearch("")}>
                   Clear search
