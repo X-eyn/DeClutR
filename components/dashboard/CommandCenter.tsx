@@ -239,7 +239,8 @@ export default function CommandCenter({ initialItems, stats: initialStats, googl
           box-shadow: 0 0 0 3px rgba(16,185,129,.18);
         }
         .connected-pill.disconnected .dot { background: #94a3b8; box-shadow: none; }
-        .conn-ico { width: 18px; height: 18px; display: grid; place-items: center; }
+        .conn-ico { width: 20px; height: 20px; display: grid; place-items: center; flex: 0 0 20px; }
+        .conn-ico svg { width: 20px; height: 20px; display: block; }
         .bell-btn { position: relative; }
         .red-dot {
           position: absolute; top: 8px; right: 9px;
@@ -394,12 +395,18 @@ export default function CommandCenter({ initialItems, stats: initialStats, googl
             title="Manage Google integrations"
           >
             <span className="conn-ico">
-              <svg width="18" height="18" viewBox="0 0 24 24">
-                <rect x="3" y="4" width="18" height="17" rx="3" fill="#fff" stroke="#dadce0"/>
-                <rect x="3" y="4" width="18" height="4" rx="3" fill="#4285f4"/>
-                <text x="12" y="17" textAnchor="middle" fontSize="9" fontWeight="700" fill="#4285f4" fontFamily="Arial">
-                  {new Date().getDate()}
-                </text>
+              <svg viewBox="0 0 200 200" aria-hidden="true" focusable="false">
+                <g transform="translate(3.75 3.75)">
+                  <path fill="#FFFFFF" d="M148.882 43.618l-47.368-5.263-57.895 5.263L38.355 96.25l5.263 52.632 52.632 6.579 52.632-6.579 5.263-53.947-5.263-51.317z" />
+                  <path fill="#1A73E8" d="M65.211 125.276c-3.934-2.658-6.658-6.539-8.145-11.671l9.132-3.763c.829 3.158 2.276 5.605 4.342 7.342 2.053 1.737 4.553 2.592 7.474 2.592 2.987 0 5.553-.908 7.697-2.724s3.224-4.132 3.224-6.934c0-2.868-1.132-5.211-3.395-7.026s-5.105-2.724-8.5-2.724h-5.276v-9.039H76.5c2.921 0 5.382-.789 7.382-2.368 2-1.579 3-3.737 3-6.487 0-2.447-.895-4.395-2.684-5.855s-4.053-2.197-6.803-2.197c-2.684 0-4.816.711-6.395 2.145s-2.724 3.197-3.447 5.276l-9.039-3.763c1.197-3.395 3.395-6.395 6.618-8.987 3.224-2.592 7.342-3.895 12.342-3.895 3.697 0 7.026.711 9.974 2.145 2.947 1.434 5.263 3.421 6.934 5.947 1.671 2.539 2.5 5.382 2.5 8.539 0 3.224-.776 5.947-2.329 8.184-1.553 2.237-3.461 3.947-5.724 5.145v.539c2.987 1.25 5.421 3.158 7.342 5.724 1.908 2.566 2.868 5.632 2.868 9.211s-.908 6.776-2.724 9.579c-1.816 2.803-4.329 5.013-7.513 6.618-3.197 1.605-6.789 2.421-10.776 2.421-4.616.005-8.879-1.324-12.813-3.982z" />
+                  <path fill="#1A73E8" d="M121.25 79.961l-9.974 7.25-5.013-7.605 17.987-12.974h6.895v61.197h-9.895V79.961z" />
+                  <path fill="#EA4335" d="M148.882 196.25l47.368-47.368-23.684-10.526-23.684 10.526-10.526 23.684 10.526 23.684z" />
+                  <path fill="#34A853" d="M33.092 172.566l10.526 23.684h105.263v-47.368H43.618l-10.526 23.684z" />
+                  <path fill="#4285F4" d="M12.039-3.75C3.316-3.75-3.75 3.316-3.75 12.039v136.842l23.684 10.526 23.684-10.526V43.618h105.263l10.526-23.684L148.882-3.75H12.039z" />
+                  <path fill="#188038" d="M-3.75 148.882v31.579c0 8.724 7.066 15.789 15.789 15.789h31.579v-47.368H-3.75z" />
+                  <path fill="#FBBC04" d="M148.882 43.618v105.263h47.368V43.618l-23.684-10.526-23.684 10.526z" />
+                  <path fill="#1967D2" d="M196.25 43.618V12.039c0-8.724-7.066-15.789-15.789-15.789h-31.579v47.368h47.368z" />
+                </g>
               </svg>
             </span>
             {googleConnected ? "Google Calendar Connected" : "Connect Google Calendar"}
@@ -413,9 +420,9 @@ export default function CommandCenter({ initialItems, stats: initialStats, googl
             title="Manage Google Tasks integration"
           >
             <span className="conn-ico">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="9" stroke="#4285f4" strokeWidth="2"/>
-                <path d="M8 12l3 3 5-6" stroke="#4285f4" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+              <svg viewBox="0 0 527.15 500" aria-hidden="true" focusable="false">
+                <polygon fill="#0066DA" points="410.4,58.3 368.8,81.2 348.2,120.6 368.8,168.8 407.8,211 450,187.5 475.9,142.8 450,87.5" />
+                <path fill="#2684FC" d="M249.3 219.4l98.9-98.9c29.1 22.1 50.5 53.8 59.6 90.4L272.1 346.7c-12.2 12.2-32 12.2-44.2 0l-91.5-91.5c-9.8-9.8-9.8-25.6 0-35.3l39-39c9.8-9.8 25.6-9.8 35.3 0l38.6 38.5zM519.8 63.6l-39.7-39.7c-9.7-9.7-25.6-9.7-35.3 0l-34.4 34.4c27.5 23 49.9 51.8 65.5 84.5l43.9-43.9c9.8-9.7 9.8-25.6 0-35.3zM412.5 250c0 89.8-72.8 162.5-162.5 162.5S87.5 339.8 87.5 250 160.2 87.5 250 87.5c36.9 0 70.9 12.3 98.2 33.1l62.2-62.2C367 21.9 311.1 0 250 0 111.9 0 0 111.9 0 250s111.9 250 250 250 250-111.9 250-250c0-38.3-8.7-74.7-24.1-107.2L407.8 211c3 12.5 4.7 25.6 4.7 39z" />
               </svg>
             </span>
             {googleConnected ? "Google Tasks Connected" : "Connect Tasks"}
