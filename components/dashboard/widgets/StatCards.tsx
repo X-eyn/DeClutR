@@ -303,32 +303,35 @@ export default function StatCards({ stats, items, onEdit, onComplete, onDelete }
           align-items: center;
           background: var(--surface, #f7f8fc);
           border-radius: 9px;
-          padding: 5px 6px;
+          padding: 6px 6px 5px;
           gap: 1px;
           min-width: 0;
-          overflow: hidden;
+          overflow: visible;
           cursor: pointer;
+          position: relative;
           transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1), background 0.2s ease, box-shadow 0.2s ease;
         }
         .stat-type-chip:hover {
           transform: translateY(-2px);
           background: #eef0f7;
           box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+          z-index: 2;
         }
-        .stat-type-chip-val { font-size: 14px; font-weight: 800; line-height: 1; transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1); }
+        .stat-type-chip-val { font-size: 14px; font-weight: 800; line-height: 1.12; position: relative; z-index: 1; transform-origin: center top; transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1); }
         .stat:hover .stat-type-chip-val {
           transform: scale(1.08);
         }
         .stat-type-chip-lbl { font-size: 10px; color: var(--mut); font-weight: 500; white-space: nowrap; }
 
         /* 3-stat row */
-        .stat-three { display: flex; align-items: flex-start; gap: 0; overflow: hidden; }
-        .stat-three-item { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow: hidden; cursor: pointer; transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1), opacity 0.2s ease; }
+        .stat-three { display: flex; align-items: flex-start; gap: 0; overflow: visible; padding-top: 5px; }
+        .stat-three-item { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow: visible; cursor: pointer; position: relative; transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1), opacity 0.2s ease; }
         .stat-three-item:hover {
           transform: translateY(-2px);
           opacity: 0.85;
+          z-index: 2;
         }
-        .stat-three-val { font-size: 17px; font-weight: 800; color: var(--ink); line-height: 1; transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1), color 0.2s ease; }
+        .stat-three-val { font-size: 17px; font-weight: 800; color: var(--ink); line-height: 1.12; position: relative; z-index: 1; transform-origin: center top; transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1), color 0.2s ease; }
         .stat:hover .stat-three-val {
           transform: scale(1.05);
         }
