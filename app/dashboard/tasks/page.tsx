@@ -34,17 +34,10 @@ export default function TasksPage() {
   const fetchItems = useCallback(async () => {
     setLoading(true);
     try {
-      const [tasksRes, deadlinesRes] = await Promise.all([
-        fetch("/api/items?type=TASK&limit=300"),
-        fetch("/api/items?type=DEADLINE&limit=300"),
-      ]);
-      const tasks = tasksRes.ok ? await tasksRes.json() : [];
-      const deadlines = deadlinesRes.ok ? await deadlinesRes.json() : [];
-      const combined: TemporalItemWithRelations[] = [
-        ...(Array.isArray(tasks) ? tasks : []),
-        ...(Array.isArray(deadlines) ? deadlines : []),
-      ];
-      setItems(combined);
+      const res = await fetch("/api/items?limit=500");
+      const data = res.ok ? await res.json() : [];
+      const list: TemporalItemWithRelations[] = Array.isArray(data) ? data : [];
+      setItems(list.filter((item) => item.type === "TASK" || item.type === "DEADLINE"));
     } finally {
       setLoading(false);
     }
@@ -86,6 +79,8 @@ export default function TasksPage() {
   }
 
   async function handleComplete(id: string) {
+    const previous = items;
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, status: "COMPLETED" } : i)));
     setCompleting((prev) => new Set(prev).add(id));
     try {
       const res = await fetch(`/api/items/${id}`, {
@@ -93,10 +88,13 @@ export default function TasksPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "COMPLETED" }),
       });
+      if (!res.ok) throw new Error("Failed to complete item");
       const json = await res.json();
       if (json.item) {
         setItems((prev) => prev.map((i) => (i.id === id ? json.item : i)));
       }
+    } catch {
+      setItems(previous);
     } finally {
       setCompleting((prev) => {
         const s = new Set(prev);
@@ -107,20 +105,33 @@ export default function TasksPage() {
   }
 
   async function handleUnComplete(id: string) {
-    const res = await fetch(`/api/items/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "ACTIVE" }),
-    });
-    const json = await res.json();
-    if (json.item) {
-      setItems((prev) => prev.map((i) => (i.id === id ? json.item : i)));
+    const previous = items;
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, status: "ACTIVE" } : i)));
+    try {
+      const res = await fetch(`/api/items/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ACTIVE" }),
+      });
+      if (!res.ok) throw new Error("Failed to reopen item");
+      const json = await res.json();
+      if (json.item) {
+        setItems((prev) => prev.map((i) => (i.id === id ? json.item : i)));
+      }
+    } catch {
+      setItems(previous);
     }
   }
 
   async function handleDelete(id: string) {
-    await fetch(`/api/items/${id}`, { method: "DELETE" });
+    const previous = items;
     setItems((prev) => prev.filter((i) => i.id !== id));
+    try {
+      const res = await fetch(`/api/items/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete item");
+    } catch {
+      setItems(previous);
+    }
   }
 
   async function handleCreate(data: CreateItemInput) {

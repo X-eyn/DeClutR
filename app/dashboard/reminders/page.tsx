@@ -79,6 +79,8 @@ export default function RemindersPage() {
   const totalActive = groups.reduce((sum, g) => sum + g.items.length, 0);
 
   async function handleDismiss(id: string) {
+    const previous = items;
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, status: "ARCHIVED" } : i)));
     setDismissing((prev) => new Set(prev).add(id));
     try {
       const res = await fetch(`/api/items/${id}`, {
@@ -86,10 +88,13 @@ export default function RemindersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "ARCHIVED" }),
       });
+      if (!res.ok) throw new Error("Failed to dismiss reminder");
       const json = await res.json();
       if (json.item) {
         setItems((prev) => prev.map((i) => (i.id === id ? json.item : i)));
       }
+    } catch {
+      setItems(previous);
     } finally {
       setDismissing((prev) => {
         const s = new Set(prev);

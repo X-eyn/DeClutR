@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { signOut } from "next-auth/react";
+import UserAvatar from "@/components/ui/UserAvatar";
 import type { TemporalItemWithRelations } from "@/types";
 
 const PREFS_KEY = "tempoflow_prefs";
@@ -139,9 +140,6 @@ export default function SettingsPage() {
   }
 
   const user = session?.user;
-  const initials = user?.name
-    ? user.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
-    : (user?.email?.[0] ?? "U").toUpperCase();
 
   const hasCalendar = googleStatus?.scopes.some(s => s.includes("calendar")) ?? false;
   const hasTasks = googleStatus?.scopes.some(s => s.includes("tasks")) ?? false;
@@ -240,12 +238,7 @@ export default function SettingsPage() {
             <div style={{ height: 64, background: "var(--line)", borderRadius: 12, animation: "skeleton-pulse 1.6s ease-in-out infinite" }} />
           ) : (
             <div className="profile-row">
-              <div className="profile-avatar">
-                {user?.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={user.image} alt={user.name ?? "User"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                ) : initials}
-              </div>
+              <UserAvatar className="profile-avatar" src={user?.image} name={user?.name} email={user?.email} />
               <div className="profile-info">
                 <div className="profile-name">{user?.name ?? "User"}</div>
                 <div className="profile-email">{user?.email ?? ""}</div>

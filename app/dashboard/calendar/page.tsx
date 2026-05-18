@@ -94,9 +94,15 @@ export default function CalendarPage() {
   }
 
   async function handleDelete(id: string) {
-    await fetch(`/api/items/${id}`, { method: "DELETE" });
+    const previous = items;
     setItems((prev) => prev.filter((i) => i.id !== id));
     if (selectedDayItems.length <= 1) setSelectedDay(null);
+    try {
+      const res = await fetch(`/api/items/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete item");
+    } catch {
+      setItems(previous);
+    }
   }
 
   function openAddForDay(day: Date) {

@@ -305,7 +305,7 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
         .today-line {
           position: absolute;
           left: var(--timeline-pad-left);
-          top: 44px;
+          top: 24px;
           bottom: 22px;
           width: 0;
           border-left: 2px dashed var(--red);

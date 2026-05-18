@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 
 interface SidebarProps {
@@ -51,9 +51,21 @@ const nav = [
 
 export default function Sidebar({ reminderCount = 0 }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [focusMode, setFocusMode] = useState(() =>
     typeof window !== "undefined" && localStorage.getItem("tempoflow_focus_mode") === "true"
   );
+
+  useEffect(() => {
+    const prefetchAll = () => nav.forEach(({ href }) => router.prefetch(href));
+    if ("requestIdleCallback" in window) {
+      const id = window.requestIdleCallback(prefetchAll, { timeout: 1200 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = globalThis.setTimeout(prefetchAll, 250);
+    return () => globalThis.clearTimeout(id);
+  }, [router]);
 
   useEffect(() => {
     document.documentElement.dataset.focusMode = focusMode ? "true" : "false";
@@ -155,9 +167,19 @@ export default function Sidebar({ reminderCount = 0 }: SidebarProps) {
 
         <nav className="nav">
           {nav.map(({ href, label, icon, badge }) => {
-            const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
+            const activePath = pendingHref && pendingHref !== pathname ? pendingHref : pathname;
+            const active = activePath === href || (href !== "/dashboard" && activePath.startsWith(href));
             return (
-              <Link key={href} href={href} className={`nav-item${active ? " active" : ""}`}>
+              <Link
+                key={href}
+                href={href}
+                prefetch
+                className={`nav-item${active ? " active" : ""}`}
+                onMouseEnter={() => router.prefetch(href)}
+                onFocus={() => router.prefetch(href)}
+                onPointerDown={() => setPendingHref(href)}
+                onClick={() => setPendingHref(href)}
+              >
                 {icon}
                 {label}
                 {badge && reminderCount > 0 && (

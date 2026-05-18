@@ -21,7 +21,7 @@ export default function NotesPage() {
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/items?type=TASK")
+    fetch("/api/items?type=TASK&limit=500")
       .then(res => res.json())
       .then(json => {
         if (cancelled) return;
@@ -87,8 +87,14 @@ export default function NotesPage() {
   }
 
   async function handleDelete(id: string) {
-    await fetch(`/api/items/${id}`, { method: "DELETE" });
+    const previous = notes;
     setNotes(prev => prev.filter(n => n.id !== id));
+    try {
+      const res = await fetch(`/api/items/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete note");
+    } catch {
+      setNotes(previous);
+    }
   }
 
   return (

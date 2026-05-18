@@ -25,12 +25,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async signIn({ user, account, profile }) {
+    async signIn({ user, profile }) {
       try {
         if (!user?.email) {
           console.error("[Auth] Sign-in failed: no email from Google");
           return false;
         }
+        const profileImage =
+          typeof profile?.picture === "string" ? profile.picture : user.image;
+        const profileName =
+          typeof profile?.name === "string" ? profile.name : user.name;
+
+        await prisma.user.updateMany({
+          where: { email: user.email },
+          data: {
+            ...(profileName ? { name: profileName } : {}),
+            ...(profileImage ? { image: profileImage } : {}),
+          },
+        });
+
         console.log("[Auth] Sign-in attempt:", user.email);
         return true;
       } catch (err) {

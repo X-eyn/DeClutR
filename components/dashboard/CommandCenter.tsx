@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { format } from "date-fns";
 import Modal from "@/components/ui/Modal";
+import UserAvatar from "@/components/ui/UserAvatar";
 import ItemForm from "@/components/dashboard/ItemForm";
 import ItemCard from "@/components/dashboard/ItemCard";
 import StatCards from "@/components/dashboard/widgets/StatCards";
@@ -156,24 +157,33 @@ export default function CommandCenter({ initialItems, googleConnected, user }: C
   }
 
   async function handleComplete(id: string) {
-    const res = await fetch(`/api/items/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "COMPLETED" }),
-    });
-    const json = await res.json();
-    if (json.item) setItems(prev => prev.map(i => i.id === id ? json.item : i));
+    const previous = items;
+    setItems(prev => prev.map(i => i.id === id ? { ...i, status: "COMPLETED" } : i));
+    try {
+      const res = await fetch(`/api/items/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "COMPLETED" }),
+      });
+      if (!res.ok) throw new Error("Failed to complete item");
+      const json = await res.json();
+      if (json.item) setItems(prev => prev.map(i => i.id === id ? json.item : i));
+    } catch {
+      setItems(previous);
+    }
   }
 
   async function handleDelete(id: string) {
-    await fetch(`/api/items/${id}`, { method: "DELETE" });
+    const previous = items;
     setItems(prev => prev.filter(i => i.id !== id));
+    try {
+      const res = await fetch(`/api/items/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete item");
+    } catch {
+      setItems(previous);
+    }
   }
 
-  // User initials for avatar fallback
-  const initials = user?.name
-    ? user.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
-    : "U";
   const displayName = user?.name ?? "User";
   const dateStr = format(new Date(), "EEEE, MMMM d, yyyy");
 
@@ -463,19 +473,7 @@ export default function CommandCenter({ initialItems, googleConnected, user }: C
             onClick={() => { setShowUserMenu(v => !v); setShowBell(false); }}
             style={{ position: "relative" }}
           >
-            <div className="avatar">
-              {user?.image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={user.image} alt={displayName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : (
-                <svg viewBox="0 0 36 36" style={{ width: "100%", height: "100%" }}>
-                  <rect width="36" height="36" fill="#fde68a"/>
-                  <circle cx="18" cy="14.5" r="6.5" fill="#f3d2a8"/>
-                  <path d="M5 36c0-7.5 5.8-12 13-12s13 4.5 13 12z" fill="#1e3a8a"/>
-                  <text x="18" y="19" textAnchor="middle" fontSize="11" fontWeight="800" fill="#1e293b" fontFamily="system-ui">{initials}</text>
-                </svg>
-              )}
-            </div>
+            <UserAvatar className="avatar" src={user?.image} name={displayName} email={user?.email} />
             <div className="user-name">{displayName}</div>
             {showUserMenu && (
               <div className="dropdown-panel user-dropdown" onClick={e => e.stopPropagation()}>
