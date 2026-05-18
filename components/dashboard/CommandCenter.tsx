@@ -571,7 +571,7 @@ export default function CommandCenter({ initialItems, googleConnected, user }: C
             {/* ROW 1: Stat Cards (7fr) | Weekly Workload (2fr) | Time Allocation (3fr) */}
             <div className="dash-row dash-row-1">
               <StatCards stats={stats} items={items} onEdit={setEditItem} onComplete={handleComplete} onDelete={handleDelete} />
-              <WorkloadChart items={items} />
+              <WorkloadChart items={items} onEdit={setEditItem} onComplete={handleComplete} onDelete={handleDelete} />
               <TimeAllocationDonut items={items} />
             </div>
 

@@ -1,39 +1,44 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-import { startOfWeek, addDays, differenceInMinutes, isSameDay, isToday } from "date-fns";
+import { startOfWeek, addDays, isSameDay, isToday, format } from "date-fns";
+import Modal from "@/components/ui/Modal";
+import ItemCard from "@/components/dashboard/ItemCard";
 import type { TemporalItemWithRelations } from "@/types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const FALLBACK_HOURS: Record<string, number> = { TASK: 2, EVENT: 1.5, DEADLINE: 1, REMINDER: 0.25 };
 
-function shouldUseTimedRange(item: TemporalItemWithRelations, start: Date, due: Date) {
-  return item.type === "EVENT" || isSameDay(start, due);
+const PRIORITY_LEVELS = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
+const PRIORITY_COLOR: Record<string, string> = {
+  CRITICAL: "#312e81",
+  HIGH:     "#6366f1",
+  MEDIUM:   "#a5b4fc",
+  LOW:      "#e0e7ff",
+};
+const PRIORITY_LABEL: Record<string, string> = {
+  CRITICAL: "Critical",
+  HIGH:     "High",
+  MEDIUM:   "Medium",
+  LOW:      "Low",
+};
+
+interface WorkloadChartProps {
+  items: TemporalItemWithRelations[];
+  onEdit?: (item: TemporalItemWithRelations) => void;
+  onComplete?: (id: string) => void;
+  onDelete?: (id: string) => void;
 }
 
-function itemHours(item: TemporalItemWithRelations): number {
-  if (item.allDay) return 8;
-
-  if (item.startDate) {
-    const start = new Date(item.startDate);
-    const due = new Date(item.dueDate);
-    if (
-      !Number.isNaN(start.getTime()) &&
-      !Number.isNaN(due.getTime()) &&
-      start < due &&
-      shouldUseTimedRange(item, start, due)
-    ) {
-      const hours = differenceInMinutes(due, start) / 60;
-      return Math.min(Math.max(hours, 0.25), 8);
-    }
-  }
-
-  return FALLBACK_HOURS[item.type] ?? 1;
+function plural(n: number, word: string) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
-export default function WorkloadChart({ items }: { items: TemporalItemWithRelations[] }) {
+export default function WorkloadChart({ items, onEdit, onComplete, onDelete }: WorkloadChartProps) {
   const [hovered, setHovered] = useState<number | null>(null);
   const [entered, setEntered] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalTitle, setModalTitle] = useState("");
+  const [modalItems, setModalItems] = useState<TemporalItemWithRelations[]>([]);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => requestAnimationFrame(() => setEntered(true)));
@@ -47,14 +52,38 @@ export default function WorkloadChart({ items }: { items: TemporalItemWithRelati
       const dayItems = items.filter(
         it => it.status !== "COMPLETED" && it.status !== "ARCHIVED" && isSameDay(new Date(it.dueDate), date)
       );
-      const hours = dayItems.reduce((sum, item) => sum + itemHours(item), 0);
-      return { label, count: dayItems.length, hours: Math.round(hours * 10) / 10, today: isToday(date) };
+
+      const segments = PRIORITY_LEVELS.map(level => {
+        const levelItems = dayItems.filter(it => it.priority === level);
+        return { level, count: levelItems.length, color: PRIORITY_COLOR[level] };
+      }).filter(s => s.count > 0);
+
+      return {
+        label,
+        today: isToday(date),
+        items: dayItems,
+        date,
+        count: dayItems.length,
+        segments,
+      };
     });
   }, [items]);
 
-  const toHours = (hours: number) => hours.toFixed(1);
+  const yMax = Math.max(3, ...bars.map(b => b.count));
+
+  const openDayModal = (dayIndex: number) => {
+    const bar = bars[dayIndex];
+    if (bar.items.length === 0) return;
+    setModalTitle(`${bar.label}, ${format(bar.date, "MMM d")} — ${plural(bar.count, "item")}`);
+    setModalItems(bar.items);
+    setModalOpen(true);
+  };
 
   const hBar = hovered !== null ? bars[hovered] : null;
+
+  function hoverBreakdown(segments: { level: string; count: number }[]) {
+    return segments.map(s => `${s.count} ${PRIORITY_LABEL[s.level] ?? s.level}`).join(", ");
+  }
 
   return (
     <>
@@ -74,25 +103,36 @@ export default function WorkloadChart({ items }: { items: TemporalItemWithRelati
           justify-content: space-between;
           align-items: center;
           margin-bottom: 8px;
+          min-width: 0;
         }
-        .wl-title { font-size: 15px; font-weight: 700; color: var(--ink); }
+        .wl-title {
+          font-size: 15px;
+          font-weight: 700;
+          color: var(--ink);
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
         .wl-hover-info {
           font-size: 12px;
           color: var(--indigo);
           font-weight: 600;
+          white-space: nowrap;
+          min-width: 120px;
+          text-align: right;
           transition: opacity 0.2s ease;
+          flex-shrink: 0;
         }
 
         .wl-chart {
           display: grid;
           grid-template-columns: 22px 1fr;
-          gap: 8px;
+          gap: 6px;
           height: 150px;
           margin-top: 4px;
         }
         .wl-y {
           display: flex;
-          flex-direction: column;
+          flex-direction: column-reverse;
           justify-content: space-between;
           font-size: 10.5px;
           color: var(--mut-2);
@@ -101,10 +141,9 @@ export default function WorkloadChart({ items }: { items: TemporalItemWithRelati
           user-select: none;
         }
 
-        /* The plot area is the only positioned ancestor — overflow hidden keeps bars inside */
         .wl-plot {
           position: relative;
-          overflow: hidden;
+          overflow: visible;
         }
 
         .wl-gridlines {
@@ -124,43 +163,47 @@ export default function WorkloadChart({ items }: { items: TemporalItemWithRelati
           display: grid;
           grid-template-columns: repeat(7, 1fr);
           align-items: end;
-          gap: 5px;
-          padding: 0 3px;
           z-index: 1;
         }
 
-        /* Each column is the full height of the bar area */
         .wl-bar-col {
           height: 100%;
           position: relative;
-          cursor: pointer;
           display: flex;
-          align-items: flex-end;
-          justify-content: center;
+          flex-direction: column;
+          align-items: center;
+          justify-content: flex-end;
+          cursor: pointer;
         }
 
-        /* Value label sits at a fixed top inside the column, never pushes bar down */
         .wl-bar-val {
           position: absolute;
           top: 2px;
           left: 0; right: 0;
           text-align: center;
-          font-size: 11px;
-          font-weight: 700;
+          font-size: 12px;
+          font-weight: 800;
           color: var(--indigo);
           pointer-events: none;
           transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
         }
 
-        .wl-bar {
-          width: 68%;
-          border-radius: 6px 6px 3px 3px;
+        .wl-bar-stack {
+          width: 70%;
+          display: flex;
+          flex-direction: column-reverse;
+          border-radius: 5px 5px 3px 3px;
+          overflow: hidden;
+          pointer-events: none;
+          transform-origin: bottom center;
+          transition: transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
+        }
+
+        .wl-bar-seg {
+          width: 100%;
           transition:
             height 0.65s cubic-bezier(0.34,1.56,0.64,1),
-            opacity 0.22s ease,
-            background 0.2s ease,
-            transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
-          transform-origin: bottom center;
+            opacity 0.22s ease;
         }
 
         .wl-x-axis {
@@ -168,47 +211,58 @@ export default function WorkloadChart({ items }: { items: TemporalItemWithRelati
           bottom: 0; left: 0; right: 0;
           display: grid;
           grid-template-columns: repeat(7, 1fr);
-          gap: 5px;
           font-size: 11px;
           color: var(--mut);
           text-align: center;
-          padding: 0 3px;
           z-index: 1;
         }
-        .wl-x-axis span { transition: color 0.2s ease; }
+        .wl-x-axis span {
+          white-space: nowrap;
+          transition: color 0.2s ease;
+        }
         .wl-x-axis span.today { color: var(--indigo-deep); font-weight: 700; }
         .wl-x-axis span.lit   { color: var(--indigo); font-weight: 700; }
+
+        .wl-modal-list { display: flex; flex-direction: column; gap: 10px; }
+        .wl-modal-empty { text-align: center; padding: 32px 0; color: var(--mut); font-size: 13.5px; }
       `}</style>
 
       <div className="wl-card">
         <div className="wl-head">
           <div className="wl-title">Weekly Workload</div>
-          <div className="wl-hover-info" style={{ opacity: hBar ? 1 : 0 }}>
-            {hBar ? `${hBar.count} item${hBar.count !== 1 ? "s" : ""} | ${toHours(hBar.hours)}h` : "-"}
+          <div className="wl-hover-info" style={{ opacity: hBar != null ? 1 : 0 }}>
+            {hBar != null
+              ? hBar.segments.length > 0
+                ? hoverBreakdown(hBar.segments)
+                : "0 items"
+              : null}
           </div>
         </div>
 
         <div className="wl-chart">
           <div className="wl-y">
-            {["8h","6h","4h","2h","0h"].map(l => <span key={l}>{l}</span>)}
+            {Array.from({ length: yMax + 1 }, (_, i) => (
+              <span key={i}>{i}</span>
+            ))}
           </div>
 
           <div className="wl-plot" onMouseLeave={() => setHovered(null)}>
-            <div className="wl-gridlines"><i/><i/><i/><i/><i/></div>
+            <div className="wl-gridlines">
+              {Array.from({ length: yMax }, (_, i) => <i key={i} />)}
+            </div>
 
             <div className="wl-bars-row">
               {bars.map((b, i) => {
-                const heightPct = Math.min((b.hours / 8) * 100, 100);
-                const isLit    = b.today || hovered === i;
                 const isDimmed = hovered !== null && hovered !== i;
+                const totalHeightPct = yMax > 0 ? (b.count / yMax) * 100 : 0;
 
                 return (
                   <div
                     key={i}
                     className="wl-bar-col"
                     onMouseEnter={() => setHovered(i)}
+                    onClick={() => openDayModal(i)}
                   >
-                    {/* Label fixed at top of column, never in flow with bar */}
                     <div
                       className="wl-bar-val"
                       style={{
@@ -216,24 +270,36 @@ export default function WorkloadChart({ items }: { items: TemporalItemWithRelati
                         transform: hovered === i ? "translateY(0)" : "translateY(5px)",
                       }}
                     >
-                      {toHours(b.hours)}h
+                      {b.count}
                     </div>
 
                     <div
-                      className="wl-bar"
+                      className="wl-bar-stack"
                       style={{
-                        height: entered ? `${Math.max(b.count > 0 ? 8 : 2, heightPct)}%` : "0%",
-                        background: isLit ? "var(--indigo)" : "var(--indigo-soft)",
+                        height: entered ? `${Math.max(b.count > 0 ? 8 : 2, totalHeightPct)}%` : "0%",
                         opacity: isDimmed ? 0.28 : 1,
-                        transform: hovered === i ? "scaleX(1.08)" : "scaleX(1)",
+                        transform: hovered === i ? "scaleX(1.06)" : "scaleX(1)",
                         transition: [
                           `height 0.65s cubic-bezier(0.34,1.56,0.64,1) ${entered ? "0s" : `${i * 0.07}s`}`,
                           "opacity 0.22s ease",
-                          "background 0.2s ease",
                           "transform 0.22s cubic-bezier(0.34,1.56,0.64,1)",
                         ].join(", "),
                       }}
-                    />
+                    >
+                      {b.segments.map(seg => {
+                        const segPct = b.count > 0 ? (seg.count / b.count) * 100 : 0;
+                        return (
+                          <div
+                            key={seg.level}
+                            className="wl-bar-seg"
+                            style={{
+                              height: entered ? `${segPct}%` : "0%",
+                              background: seg.color,
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
                 );
               })}
@@ -249,6 +315,24 @@ export default function WorkloadChart({ items }: { items: TemporalItemWithRelati
           </div>
         </div>
       </div>
+
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={modalTitle}>
+        <div className="wl-modal-list">
+          {modalItems.length === 0 ? (
+            <div className="wl-modal-empty">No items to display</div>
+          ) : (
+            modalItems.map(item => (
+              <ItemCard
+                key={item.id}
+                item={item}
+                onComplete={id => { onComplete?.(id); setModalItems(prev => prev.map(i => i.id === id ? { ...i, status: "COMPLETED" } : i)); }}
+                onDelete={id => { onDelete?.(id); setModalItems(prev => prev.filter(i => i.id !== id)); }}
+                onEdit={item => { onEdit?.(item); setModalOpen(false); }}
+              />
+            ))
+          )}
+        </div>
+      </Modal>
     </>
   );
 }

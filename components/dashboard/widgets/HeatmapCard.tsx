@@ -5,10 +5,19 @@ import { addDays, format, isSameDay, startOfDay, startOfWeek } from "date-fns";
 import type { TemporalItemWithRelations } from "@/types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const PALETTE = ["#f8fafc", "#dbeafe", "#93c5fd", "#4f46e5", "#312e81"];
+const PALETTE = ["#f8fafc", "#e0e7ff", "#a5b4fc", "#6366f1", "#312e81"];
 const SLOT_COUNT = 24;
 const SLOT_MINUTES = 60;
 const DAY_MINUTES = 24 * 60;
+
+const PRIORITY_RANK: Record<string, number> = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
+
+const TIME_BLOCKS = [
+  { start: 0,  end: 6,  label: "Night",    color: "rgba(148,163,184,0.04)" },
+  { start: 6,  end: 12, label: "Morning",  color: "rgba(251,191,36,0.04)" },
+  { start: 12, end: 18, label: "Afternoon",color: "rgba(99,102,241,0.04)" },
+  { start: 18, end: 24, label: "Evening",  color: "rgba(168,85,247,0.04)" },
+];
 
 type ItemWindow = {
   item: TemporalItemWithRelations;
@@ -149,6 +158,7 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
   const [hoveredCell, setHoveredCell] = useState<HeatmapCell | null>(null);
   const [hoveredDay, setHoveredDay] = useState<number | null>(null);
   const [selectedCell, setSelectedCell] = useState<HeatmapCell | null>(null);
+  const [priorityFilter, setPriorityFilter] = useState<string | null>(null);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => requestAnimationFrame(() => setEntered(true)));
@@ -163,10 +173,13 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const { grid, todayDow, weekItems, busiestCell } = useMemo(() => {
+  const { grid, todayDow, weekItems, topPriorityCell } = useMemo(() => {
     const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
     const todayDow = (new Date().getDay() + 6) % 7;
-    const activeItems = items.filter(item => item.status !== "COMPLETED" && item.status !== "ARCHIVED");
+    const baseItems = items.filter(item => item.status !== "COMPLETED" && item.status !== "ARCHIVED");
+    const activeItems = priorityFilter
+      ? baseItems.filter(item => item.priority === priorityFilter)
+      : baseItems;
     const represented = new Map<string, TemporalItemWithRelations>();
 
     const grid: HeatmapCell[][] = DAYS.map((_, di) => {
@@ -181,6 +194,11 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
 
         for (const entry of slotItems) represented.set(entry.item.id, entry.item);
 
+        let intensity = 0;
+        if (slotItems.length > 0) {
+          intensity = slotItems.reduce((max, entry) => Math.max(max, PRIORITY_RANK[entry.item.priority] ?? 2), 0);
+        }
+
         return {
           di,
           si,
@@ -189,17 +207,22 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
           endMin,
           label: slotLabel(startMin, endMin),
           items: slotItems,
-          intensity: Math.min(slotItems.length, PALETTE.length - 1),
+          intensity,
         };
       });
     });
 
-    const busiestCell = grid
+    const topPriorityCell = grid
       .flat()
-      .reduce<HeatmapCell | null>((best, cell) => (!best || cell.items.length > best.items.length ? cell : best), null);
+      .reduce<HeatmapCell | null>((best, cell) => {
+        if (cell.intensity === 0) return best;
+        if (!best || cell.intensity > best.intensity) return cell;
+        if (cell.intensity === best.intensity && cell.date < best.date) return cell;
+        return best;
+      }, null);
 
-    return { grid, todayDow, weekItems: Array.from(represented.values()), busiestCell };
-  }, [items]);
+    return { grid, todayDow, weekItems: Array.from(represented.values()), topPriorityCell };
+  }, [items, priorityFilter]);
 
   const onCellEnter = useCallback((cell: HeatmapCell) => {
     setHoveredCell(cell);
@@ -271,16 +294,16 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
 
         .hm-grid {
           display: grid;
-          grid-template-columns: 32px repeat(24, minmax(0, 1fr));
-          gap: 3px;
+          grid-template-columns: 34px repeat(24, minmax(0, 1fr));
+          gap: 2px;
           align-items: center;
         }
         .hm-hour-row {
           grid-column: 1 / -1;
           display: grid;
-          grid-template-columns: 32px repeat(24, minmax(0, 1fr));
-          gap: 3px;
-          font-size: 9.5px;
+          grid-template-columns: 34px repeat(24, minmax(0, 1fr));
+          gap: 2px;
+          font-size: 10px;
           color: var(--mut-2);
           margin-bottom: 2px;
           user-select: none;
@@ -289,9 +312,34 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
           min-width: 0;
           overflow: visible;
           white-space: nowrap;
-          text-align: left;
+          text-align: center;
+          padding-bottom: 1px;
+        }
+        .hm-hour.major {
+          font-weight: 700;
+          color: var(--mut);
+          font-size: 10.5px;
         }
         .hm-hour.blank { color: transparent; }
+
+        .hm-time-block {
+          grid-column: 2 / -1;
+          display: grid;
+          grid-template-columns: repeat(24, minmax(0, 1fr));
+          gap: 2px;
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          z-index: 0;
+        }
+        .hm-time-block-seg {
+          border-radius: 4px;
+          opacity: 0.35;
+        }
+        .hm-grid-wrap {
+          position: relative;
+          overflow: hidden;
+        }
 
         .hm-day-label {
           font-size: 11px;
@@ -348,6 +396,10 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
           transition: color 0.2s ease;
         }
 
+        .hm-time-blocks { display: flex; gap: 12px; margin-top: 8px; font-size: 10.5px; color: var(--mut-2); }
+        .hm-time-blocks span { opacity: 0.5; transition: opacity 0.2s ease; }
+        .hm-time-blocks span:hover { opacity: 1; }
+
         .hm-legend {
           display: flex;
           align-items: center;
@@ -356,15 +408,22 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
           font-size: 11px;
           color: var(--mut);
         }
-        .hm-scale { display: flex; gap: 3px; }
-        .hm-scale span {
+        .hm-scale { display: flex; gap: 3px; align-items: center; }
+        .hm-scale-item {
           width: 18px;
           height: 12px;
           border-radius: 3px;
           display: block;
-          transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
+          cursor: pointer;
+          transition: transform 0.22s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s ease, opacity 0.2s ease;
         }
-        .hm-scale span:hover { transform: scale(1.3); }
+        .hm-scale-item:hover { transform: scale(1.35); box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        .hm-scale-item.active {
+          transform: scale(1.3);
+          box-shadow: 0 0 0 2px white, 0 0 0 4px rgba(79,70,229,0.5);
+          border-radius: 3px;
+        }
+        .hm-scale-item.dim { opacity: 0.3; }
 
         .hm-slot-modal {
           position: absolute;
@@ -476,19 +535,33 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
             Schedule Heatmap <span className="muted">(This Week)</span>
           </div>
           <div className="hm-summary">
-            {busiestCell && busiestCell.items.length > 0
-              ? `Peak: ${plural(busiestCell.items.length, "item")} ${format(busiestCell.date, "EEE")} ${busiestCell.label}`
-              : "No active load"}
+            {topPriorityCell && topPriorityCell.intensity > 0
+              ? `Most Critical: ${format(topPriorityCell.date, "EEE MMM d")} — ${topPriorityCell.label}`
+              : "All clear this week"}
           </div>
         </div>
 
-        <div className="hm-grid" onMouseLeave={clearGridFocus}>
+        <div className="hm-grid-wrap">
+          <div className="hm-time-block">
+            {TIME_BLOCKS.map((block, bi) => (
+              <div
+                key={bi}
+                className="hm-time-block-seg"
+                style={{
+                  gridColumn: `${block.start + 1} / ${block.end + 1}`,
+                  background: block.color,
+                }}
+              />
+            ))}
+          </div>
+          <div className="hm-grid" onMouseLeave={clearGridFocus}>
           <div className="hm-hour-row">
             <span />
             {Array.from({ length: SLOT_COUNT }, (_, si) => {
               const showLabel = si % 3 === 0;
+              const isMajor = si === 0 || si === 12;
               return (
-                <span key={si} className={`hm-hour${showLabel ? "" : " blank"}`}>
+                <span key={si} className={`hm-hour${showLabel ? isMajor ? " major" : "" : " blank"}`}>
                   {showLabel ? hourLabel(si * SLOT_MINUTES) : "."}
                 </span>
               );
@@ -564,17 +637,38 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
             );
           })}
         </div>
+        </div>
 
         <div className="hm-status">{statusText}</div>
+
+        <div className="hm-time-blocks">
+          {TIME_BLOCKS.map(b => <span key={b.label}>{b.label}</span>)}
+        </div>
 
         <div className="hm-legend">
           <span>Free</span>
           <div className="hm-scale">
-            {PALETTE.map((color, index) => (
-              <span key={index} style={{ background: color }} />
-            ))}
+            <span
+              className={`hm-scale-item${priorityFilter === null ? " active" : ""}`}
+              style={{ background: PALETTE[0] }}
+              onClick={() => setPriorityFilter(null)}
+              title="Show all"
+            />
+            {(["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const).map((level, i) => {
+              const isActive = priorityFilter === level;
+              const isDimmed = priorityFilter !== null && priorityFilter !== level;
+              return (
+                <span
+                  key={level}
+                  className={`hm-scale-item${isActive ? " active" : ""}${isDimmed ? " dim" : ""}`}
+                  style={{ background: PALETTE[i + 1] }}
+                  onClick={() => setPriorityFilter(isActive ? null : level)}
+                  title={`${level} priority`}
+                />
+              );
+            })}
           </div>
-          <span>Busy</span>
+          <span>Critical</span>
         </div>
 
         {selectedCell && selectedCell.items.length > 0 && (
