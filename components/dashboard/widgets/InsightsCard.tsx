@@ -169,8 +169,8 @@ export default function InsightsCard({ items }: InsightsCardProps) {
           </div>
         </div>
 
-        {insights.map((ins, i) => (
-          <div key={i} className="ins-row">
+        {insights.map((ins) => (
+          <div key={ins.variant} className="ins-row">
             <div className="ins-ico" style={icoStyle[ins.variant]}>{ins.icon}</div>
             <div className="ins-text">{ins.text}</div>
           </div>

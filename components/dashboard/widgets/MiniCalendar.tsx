@@ -101,14 +101,14 @@ export default function MiniCalendar({ items }: MiniCalendarProps) {
         </div>
 
         <div className="mc-grid">
-          {DOW.map((d, i) => <div key={i} className="mc-dow">{d}</div>)}
+          {DOW.map((d, i) => <div key={`dow-${i}`} className="mc-dow">{d}</div>)}
           {cells.map((day, i) => {
-            if (!day) return <div key={i} />;
+            if (!day) return <div key={`pad-${i}`} />;
             const dot = dotForDay(day);
             const today = isToday(day);
             const dim = !isSameMonth(day, month);
             return (
-              <div key={i} className={`mc-day${today ? " today" : ""}${dim ? " dim" : ""}`}>
+              <div key={format(day, "yyyy-MM-dd")} className={`mc-day${today ? " today" : ""}${dim ? " dim" : ""}`}>
                 {format(day, "d")}
                 {dot && !today && (
                   <span className="mc-dot" style={{ background: dot }} />
