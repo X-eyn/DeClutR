@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { format, isPast, isToday } from "date-fns";
 import Modal from "@/components/ui/Modal";
 import ItemForm from "@/components/dashboard/ItemForm";
+import { useItems } from "@/components/dashboard/ItemsProvider";
 import type { TemporalItemWithRelations, CreateItemInput } from "@/types";
 
 type FilterTab = "All" | "Active" | "Overdue" | "Completed";
@@ -24,32 +25,27 @@ function dueDateStyle(item: TemporalItemWithRelations) {
 }
 
 export default function TasksPage() {
-  const [items, setItems] = useState<TemporalItemWithRelations[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { items: allItems, loading, createItem, updateItem, deleteItem, completeItem, uncompleteItem } = useItems();
   const [tab, setTab] = useState<FilterTab>("All");
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<TemporalItemWithRelations | null>(null);
   const [completing, setCompleting] = useState<Set<string>>(new Set());
-
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/items?limit=500");
-      const data = res.ok ? await res.json() : [];
-      const list: TemporalItemWithRelations[] = Array.isArray(data) ? data : [];
-      setItems(list.filter((item) => item.type === "TASK" || item.type === "DEADLINE"));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    queueMicrotask(() => void fetchItems());
-  }, [fetchItems]);
+  const items = useMemo(
+    () => allItems.filter((item) => item.type === "TASK" || item.type === "DEADLINE"),
+    [allItems]
+  );
 
   const grouped = useMemo(() => {
     const active = items.filter(
-      (i) => i.status !== "COMPLETED" && i.status !== "ARCHIVED" && !isPast(new Date(i.dueDate))
+      (i) => {
+        const dueDate = new Date(i.dueDate);
+        return (
+          i.status !== "COMPLETED" &&
+          i.status !== "ARCHIVED" &&
+          !isPast(dueDate) &&
+          !isToday(dueDate)
+        );
+      }
     ).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
     const overdue = items.filter(
@@ -79,22 +75,11 @@ export default function TasksPage() {
   }
 
   async function handleComplete(id: string) {
-    const previous = items;
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, status: "COMPLETED" } : i)));
     setCompleting((prev) => new Set(prev).add(id));
     try {
-      const res = await fetch(`/api/items/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "COMPLETED" }),
-      });
-      if (!res.ok) throw new Error("Failed to complete item");
-      const json = await res.json();
-      if (json.item) {
-        setItems((prev) => prev.map((i) => (i.id === id ? json.item : i)));
-      }
+      await completeItem(id);
     } catch {
-      setItems(previous);
+      // Provider rolls back the optimistic status change.
     } finally {
       setCompleting((prev) => {
         const s = new Set(prev);
@@ -105,60 +90,30 @@ export default function TasksPage() {
   }
 
   async function handleUnComplete(id: string) {
-    const previous = items;
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, status: "ACTIVE" } : i)));
     try {
-      const res = await fetch(`/api/items/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "ACTIVE" }),
-      });
-      if (!res.ok) throw new Error("Failed to reopen item");
-      const json = await res.json();
-      if (json.item) {
-        setItems((prev) => prev.map((i) => (i.id === id ? json.item : i)));
-      }
+      await uncompleteItem(id);
     } catch {
-      setItems(previous);
+      // Provider rolls back the optimistic status change.
     }
   }
 
   async function handleDelete(id: string) {
-    const previous = items;
-    setItems((prev) => prev.filter((i) => i.id !== id));
     try {
-      const res = await fetch(`/api/items/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete item");
+      await deleteItem(id);
     } catch {
-      setItems(previous);
+      // Provider restores the deleted item on failure.
     }
   }
 
   async function handleCreate(data: CreateItemInput) {
-    const res = await fetch("/api/items", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    const json = await res.json();
-    if (json.item) {
-      setItems((prev) => [json.item, ...prev]);
-      setShowForm(false);
-    }
+    const item = await createItem(data);
+    if (item) setShowForm(false);
   }
 
   async function handleUpdate(data: CreateItemInput) {
     if (!editItem) return;
-    const res = await fetch(`/api/items/${editItem.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    const json = await res.json();
-    if (json.item) {
-      setItems((prev) => prev.map((i) => (i.id === editItem.id ? json.item : i)));
-      setEditItem(null);
-    }
+    const item = await updateItem(editItem.id, data);
+    if (item) setEditItem(null);
   }
 
   const tabs: FilterTab[] = ["All", "Active", "Overdue", "Completed"];

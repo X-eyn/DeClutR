@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { format } from "date-fns";
-import { interpretTimeLeft, urgencyColor, urgencyBadgeColor } from "@/lib/time";
+import { interpretTimeLeft } from "@/lib/time";
 import type { TemporalItemWithRelations } from "@/types";
 
 interface ItemCardProps {
@@ -11,10 +10,6 @@ interface ItemCardProps {
   onDelete: (id: string) => void;
   onEdit: (item: TemporalItemWithRelations) => void;
 }
-
-const TYPE_LABEL: Record<string, string> = {
-  DEADLINE: "Deadline", EVENT: "Event", TASK: "Task", REMINDER: "Reminder",
-};
 
 const PRIORITY_STYLE: Record<string, { background: string; color: string }> = {
   LOW:      { background: "#f1f5f9", color: "#64748b" },

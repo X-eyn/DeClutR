@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Modal from "@/components/ui/Modal";
 import ItemForm from "@/components/dashboard/ItemForm";
+import { useItems } from "@/components/dashboard/ItemsProvider";
 import type { TemporalItemWithRelations, CreateItemInput } from "@/types";
 import { format } from "date-fns";
 
@@ -11,26 +12,15 @@ function isNoteItem(item: TemporalItemWithRelations) {
 }
 
 export default function NotesPage() {
-  const [notes, setNotes] = useState<TemporalItemWithRelations[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { items, loading, createItem, updateItem, deleteItem } = useItems();
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [editNote, setEditNote] = useState<TemporalItemWithRelations | null>(null);
   const [googleConnected, setGoogleConnected] = useState(false);
+  const notes = useMemo(() => items.filter(isNoteItem), [items]);
 
   useEffect(() => {
     let cancelled = false;
-
-    fetch("/api/items?type=TASK&limit=500")
-      .then(res => res.json())
-      .then(json => {
-        if (cancelled) return;
-        const items = Array.isArray(json) ? json : json.items ?? [];
-        setNotes(items.filter(isNoteItem));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
 
     fetch("/api/google/connect")
       .then(r => r.json())
@@ -60,40 +50,21 @@ export default function NotesPage() {
       type: "TASK",
       dueDate: "2099-12-31T00:00:00.000Z",
     };
-    const res = await fetch("/api/items", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const json = await res.json();
-    if (json.item) {
-      setNotes(prev => [json.item, ...prev]);
-      setShowCreate(false);
-    }
+    const item = await createItem(payload);
+    if (item) setShowCreate(false);
   }
 
   async function handleUpdate(data: CreateItemInput) {
     if (!editNote) return;
-    const res = await fetch(`/api/items/${editNote.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    const json = await res.json();
-    if (json.item) {
-      setNotes(prev => prev.map(n => n.id === editNote.id ? json.item : n));
-      setEditNote(null);
-    }
+    const item = await updateItem(editNote.id, data);
+    if (item) setEditNote(null);
   }
 
   async function handleDelete(id: string) {
-    const previous = notes;
-    setNotes(prev => prev.filter(n => n.id !== id));
     try {
-      const res = await fetch(`/api/items/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete note");
+      await deleteItem(id);
     } catch {
-      setNotes(previous);
+      // Provider restores the deleted note on failure.
     }
   }
 

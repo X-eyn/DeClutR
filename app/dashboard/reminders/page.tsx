@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { format, isToday, isPast, isThisWeek } from "date-fns";
 import Modal from "@/components/ui/Modal";
 import ItemForm from "@/components/dashboard/ItemForm";
+import { useItems } from "@/components/dashboard/ItemsProvider";
 import type { TemporalItemWithRelations, CreateItemInput } from "@/types";
 
 interface ReminderGroup {
@@ -52,49 +53,24 @@ function groupReminders(items: TemporalItemWithRelations[]): ReminderGroup[] {
 }
 
 export default function RemindersPage() {
-  const [items, setItems] = useState<TemporalItemWithRelations[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { items: allItems, loading, createItem, updateItem, dismissItem } = useItems();
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<TemporalItemWithRelations | null>(null);
   const [dismissing, setDismissing] = useState<Set<string>>(new Set());
-
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/items?type=REMINDER&limit=300");
-      if (res.ok) {
-        const data = await res.json();
-        setItems(Array.isArray(data) ? data : []);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    queueMicrotask(() => void fetchItems());
-  }, [fetchItems]);
+  const items = useMemo(
+    () => allItems.filter((item) => item.type === "REMINDER"),
+    [allItems]
+  );
 
   const groups = useMemo(() => groupReminders(items), [items]);
   const totalActive = groups.reduce((sum, g) => sum + g.items.length, 0);
 
   async function handleDismiss(id: string) {
-    const previous = items;
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, status: "ARCHIVED" } : i)));
     setDismissing((prev) => new Set(prev).add(id));
     try {
-      const res = await fetch(`/api/items/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "ARCHIVED" }),
-      });
-      if (!res.ok) throw new Error("Failed to dismiss reminder");
-      const json = await res.json();
-      if (json.item) {
-        setItems((prev) => prev.map((i) => (i.id === id ? json.item : i)));
-      }
+      await dismissItem(id);
     } catch {
-      setItems(previous);
+      // Provider rolls back the optimistic dismissal.
     } finally {
       setDismissing((prev) => {
         const s = new Set(prev);
@@ -105,30 +81,14 @@ export default function RemindersPage() {
   }
 
   async function handleCreate(data: CreateItemInput) {
-    const res = await fetch("/api/items", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    const json = await res.json();
-    if (json.item) {
-      setItems((prev) => [json.item, ...prev]);
-      setShowForm(false);
-    }
+    const item = await createItem(data);
+    if (item) setShowForm(false);
   }
 
   async function handleUpdate(data: CreateItemInput) {
     if (!editItem) return;
-    const res = await fetch(`/api/items/${editItem.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    const json = await res.json();
-    if (json.item) {
-      setItems((prev) => prev.map((i) => (i.id === editItem.id ? json.item : i)));
-      setEditItem(null);
-    }
+    const item = await updateItem(editItem.id, data);
+    if (item) setEditItem(null);
   }
 
   function formatReminderTime(item: TemporalItemWithRelations): string {

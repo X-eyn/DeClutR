@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useMemo } from "react";
 import {
   startOfMonth, endOfMonth, eachDayOfInterval, getDay,
   format, isSameDay, isToday, addMonths, subMonths, isSameMonth,
@@ -8,6 +8,7 @@ import {
 } from "date-fns";
 import Modal from "@/components/ui/Modal";
 import ItemForm from "@/components/dashboard/ItemForm";
+import { useItems } from "@/components/dashboard/ItemsProvider";
 import type { TemporalItemWithRelations, CreateItemInput } from "@/types";
 
 const TYPE_COLORS: Record<string, { bg: string; color: string; dot: string }> = {
@@ -20,31 +21,16 @@ const TYPE_COLORS: Record<string, { bg: string; color: string; dot: string }> = 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function CalendarPage() {
-  const [items, setItems] = useState<TemporalItemWithRelations[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { items: allItems, loading, createItem, updateItem, deleteItem } = useItems();
   const [month, setMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<TemporalItemWithRelations | null>(null);
   const [preselectedDate, setPreselectedDate] = useState<string | undefined>(undefined);
-
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/items?limit=500");
-      if (res.ok) {
-        const data = await res.json();
-        const liveItems: TemporalItemWithRelations[] = Array.isArray(data) ? data : [];
-        setItems(liveItems.filter(item => item.status !== "ARCHIVED"));
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    queueMicrotask(() => void fetchItems());
-  }, [fetchItems]);
+  const items = useMemo(
+    () => allItems.filter(item => item.status !== "ARCHIVED"),
+    [allItems]
+  );
 
   const cells = useMemo(() => {
     const start = startOfMonth(month);
@@ -66,42 +52,25 @@ export default function CalendarPage() {
   const selectedDayItems = selectedDay ? itemsForDay(selectedDay) : [];
 
   async function handleCreate(data: CreateItemInput) {
-    const res = await fetch("/api/items", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    const json = await res.json();
-    if (json.item) {
-      setItems((prev) => [json.item, ...prev]);
-      setShowForm(false);
-      setPreselectedDate(undefined);
-    }
+    const item = await createItem(data);
+    if (!item) return;
+    setShowForm(false);
+    setPreselectedDate(undefined);
   }
 
   async function handleUpdate(data: CreateItemInput) {
     if (!editItem) return;
-    const res = await fetch(`/api/items/${editItem.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    const json = await res.json();
-    if (json.item) {
-      setItems((prev) => prev.map((i) => (i.id === editItem.id ? json.item : i)));
-      setEditItem(null);
-    }
+    const item = await updateItem(editItem.id, data);
+    if (item) setEditItem(null);
   }
 
   async function handleDelete(id: string) {
-    const previous = items;
-    setItems((prev) => prev.filter((i) => i.id !== id));
+    const previousSelectedDay = selectedDay;
     if (selectedDayItems.length <= 1) setSelectedDay(null);
     try {
-      const res = await fetch(`/api/items/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete item");
+      await deleteItem(id);
     } catch {
-      setItems(previous);
+      setSelectedDay(previousSelectedDay);
     }
   }
 

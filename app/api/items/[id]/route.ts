@@ -1,21 +1,9 @@
-import { after, NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { updateCalendarEvent, deleteCalendarEvent, updateGoogleTask, deleteGoogleTask } from "@/lib/google";
+import { scheduleDeletedItemGoogleSync, scheduleUpdatedItemGoogleSync } from "@/lib/google-sync";
 import type { UpdateItemInput } from "@/types";
 import type { Prisma } from "@prisma/client";
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-async function createSyncLog(data: Prisma.SyncLogUncheckedCreateInput) {
-  try {
-    await prisma.syncLog.create({ data });
-  } catch (error) {
-    console.error("Failed to create sync log", error);
-  }
-}
 
 async function getItem(userId: string, id: string) {
   return prisma.temporalItem.findFirst({ where: { id, userId }, include: { checklists: true, tags: true } });
@@ -69,74 +57,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   });
 
   if (existing.googleCalendarEventId || existing.googleTaskId) {
-    after(async () => {
-      let synced = false;
-
-      if (existing.googleCalendarEventId) {
-        try {
-          await updateCalendarEvent(session.user.id, existing.googleCalendarEventId, {
-            title: body.title ?? existing.title,
-            description: body.description ?? existing.description ?? undefined,
-            startDate: startDateObj,
-            dueDate: dueDateObj,
-            allDay: body.allDay ?? existing.allDay,
-            reminderMinutes: body.reminderMinutes ?? existing.reminderMinutes,
-          });
-          synced = true;
-          await createSyncLog({
-            userId: session.user.id,
-            action: "UPDATE_CALENDAR_EVENT",
-            itemId: id,
-            itemTitle: body.title ?? existing.title,
-            status: "SUCCESS",
-          });
-        } catch (error: unknown) {
-          await createSyncLog({
-            userId: session.user.id,
-            action: "UPDATE_CALENDAR_EVENT",
-            itemId: id,
-            itemTitle: body.title ?? existing.title,
-            status: "ERROR",
-            message: errorMessage(error),
-          });
-        }
-      }
-
-      if (existing.googleTaskId) {
-        try {
-          await updateGoogleTask(session.user.id, existing.googleTaskId, {
-            title: body.title ?? existing.title,
-            notes: body.description ?? existing.description ?? undefined,
-            dueDate: dueDateObj,
-            completed: (body.status ?? existing.status) === "COMPLETED",
-          });
-          synced = true;
-          await createSyncLog({
-            userId: session.user.id,
-            action: "UPDATE_GOOGLE_TASK",
-            itemId: id,
-            itemTitle: body.title ?? existing.title,
-            status: "SUCCESS",
-          });
-        } catch (error: unknown) {
-          await createSyncLog({
-            userId: session.user.id,
-            action: "UPDATE_GOOGLE_TASK",
-            itemId: id,
-            itemTitle: body.title ?? existing.title,
-            status: "ERROR",
-            message: errorMessage(error),
-          });
-        }
-      }
-
-      if (synced) {
-        await prisma.temporalItem.update({
-          where: { id },
-          data: { lastSyncedAt: new Date() },
-        });
-      }
-    });
+    scheduleUpdatedItemGoogleSync({ userId: session.user.id, item: updated });
   }
 
   return NextResponse.json({ item: updated, syncErrors: [], syncPending: !!(existing.googleCalendarEventId || existing.googleTaskId) });
@@ -152,51 +73,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   await prisma.temporalItem.delete({ where: { id } });
 
   if (existing.googleCalendarEventId || existing.googleTaskId) {
-    after(async () => {
-      if (existing.googleCalendarEventId) {
-        try {
-          await deleteCalendarEvent(session.user.id, existing.googleCalendarEventId);
-          await createSyncLog({
-            userId: session.user.id,
-            action: "DELETE_CALENDAR_EVENT",
-            itemId: id,
-            itemTitle: existing.title,
-            status: "SUCCESS",
-          });
-        } catch (error: unknown) {
-          await createSyncLog({
-            userId: session.user.id,
-            action: "DELETE_CALENDAR_EVENT",
-            itemId: id,
-            itemTitle: existing.title,
-            status: "ERROR",
-            message: errorMessage(error),
-          });
-        }
-      }
-
-      if (existing.googleTaskId) {
-        try {
-          await deleteGoogleTask(session.user.id, existing.googleTaskId);
-          await createSyncLog({
-            userId: session.user.id,
-            action: "DELETE_GOOGLE_TASK",
-            itemId: id,
-            itemTitle: existing.title,
-            status: "SUCCESS",
-          });
-        } catch (error: unknown) {
-          await createSyncLog({
-            userId: session.user.id,
-            action: "DELETE_GOOGLE_TASK",
-            itemId: id,
-            itemTitle: existing.title,
-            status: "ERROR",
-            message: errorMessage(error),
-          });
-        }
-      }
-    });
+    scheduleDeletedItemGoogleSync({ userId: session.user.id, item: existing });
   }
 
   return NextResponse.json({ success: true, syncErrors: [], syncPending: !!(existing.googleCalendarEventId || existing.googleTaskId) });

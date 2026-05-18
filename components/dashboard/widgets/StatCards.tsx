@@ -25,7 +25,7 @@ function dedupeById(list: TemporalItemWithRelations[]) {
   });
 }
 
-export default function StatCards({ stats, items, onEdit, onComplete, onDelete }: StatCardsProps) {
+export default function StatCards({ items, onEdit, onComplete, onDelete }: StatCardsProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
   const [modalItems, setModalItems] = useState<TemporalItemWithRelations[]>([]);

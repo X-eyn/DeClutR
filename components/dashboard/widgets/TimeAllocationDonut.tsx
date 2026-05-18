@@ -3,6 +3,8 @@
 import { useMemo, useState, useEffect } from "react";
 import { differenceInMinutes, isSameDay, isThisWeek } from "date-fns";
 import type { TemporalItemWithRelations } from "@/types";
+import Modal from "@/components/ui/Modal";
+import ItemCard from "@/components/dashboard/ItemCard";
 
 interface Segment {
   key: string;
@@ -15,10 +17,10 @@ interface Segment {
 }
 
 const SEGMENTS = [
-  { key: "TASK",     label: "Focused Work", color: "#8b5cf6", light: "#f5f3ff" },
-  { key: "EVENT",    label: "Classes",      color: "#6366f1", light: "#eef2ff" },
-  { key: "DEADLINE", label: "Meetings",     color: "#ef4444", light: "#fff1f2" },
-  { key: "REMINDER", label: "Personal",     color: "#94a3b8", light: "#f8fafc" },
+  { key: "TASK",     label: "Tasks",     color: "#8b5cf6", light: "#f5f3ff" },
+  { key: "EVENT",    label: "Events",    color: "#6366f1", light: "#eef2ff" },
+  { key: "DEADLINE", label: "Deadlines", color: "#ef4444", light: "#fff1f2" },
+  { key: "REMINDER", label: "Reminders", color: "#94a3b8", light: "#f8fafc" },
 ];
 
 const FALLBACK_HOURS: Record<string, number> = { TASK: 2, EVENT: 1.5, DEADLINE: 1, REMINDER: 0.25 };
@@ -47,8 +49,19 @@ function itemHours(item: TemporalItemWithRelations): number {
   return FALLBACK_HOURS[item.type] ?? 1;
 }
 
-export default function TimeAllocationDonut({ items }: { items: TemporalItemWithRelations[] }) {
+export default function TimeAllocationDonut({
+  items,
+  onEdit,
+  onComplete,
+  onDelete,
+}: {
+  items: TemporalItemWithRelations[];
+  onEdit?: (item: TemporalItemWithRelations) => void;
+  onComplete?: (id: string) => void;
+  onDelete?: (id: string) => void;
+}) {
   const [hovered, setHovered] = useState<number | null>(null);
+  const [selectedSegment, setSelectedSegment] = useState<Segment | null>(null);
   const [entered, setEntered] = useState(false);
 
   useEffect(() => {
@@ -56,7 +69,7 @@ export default function TimeAllocationDonut({ items }: { items: TemporalItemWith
     return () => cancelAnimationFrame(id);
   }, []);
 
-  const { segments, totalHours } = useMemo(() => {
+  const { segments, totalHours, weekItems } = useMemo(() => {
     const weekItems = items.filter(
       i =>
         i.status !== "COMPLETED" &&
@@ -83,6 +96,7 @@ export default function TimeAllocationDonut({ items }: { items: TemporalItemWith
           count: 0,
         })) as Segment[],
         totalHours: 0,
+        weekItems,
       };
     }
 
@@ -96,7 +110,7 @@ export default function TimeAllocationDonut({ items }: { items: TemporalItemWith
     const drift = raw.reduce((a, s) => a + s.pct, 0) - 100;
     if (drift !== 0) raw[0].pct -= drift;
 
-    return { segments: raw, totalHours: Math.round(totalH * 10) / 10 };
+    return { segments: raw, totalHours: Math.round(totalH * 10) / 10, weekItems };
   }, [items]);
 
   // r = 15.915 → circumference ≈ 100, easy % math
@@ -113,6 +127,14 @@ export default function TimeAllocationDonut({ items }: { items: TemporalItemWith
     ? hSeg.hours > 0 ? `${Math.round(hSeg.hours * 10) / 10}h` : `${hSeg.pct}%`
     : `${totalHours}h`;
   const centerSub = hSeg ? hSeg.label : "Total";
+
+  const handleSegmentClick = (seg: Segment) => {
+    if (seg.count > 0) setSelectedSegment(seg);
+  };
+
+  const filteredItems = selectedSegment
+    ? weekItems.filter(i => i.type === selectedSegment.key)
+    : [];
 
   return (
     <>
@@ -263,6 +285,7 @@ export default function TimeAllocationDonut({ items }: { items: TemporalItemWith
                     ].join(", "),
                   }}
                   onMouseEnter={() => setHovered(i)}
+                  onClick={(e) => { e.stopPropagation(); handleSegmentClick(arc); }}
                 />
               ))}
             </svg>
@@ -293,6 +316,7 @@ export default function TimeAllocationDonut({ items }: { items: TemporalItemWith
                 }}
                 onMouseEnter={() => setHovered(i)}
                 onMouseLeave={() => setHovered(null)}
+                onClick={(e) => { e.stopPropagation(); handleSegmentClick(s); }}
               >
                 <span
                   className="alloc-dot"
@@ -311,6 +335,41 @@ export default function TimeAllocationDonut({ items }: { items: TemporalItemWith
           </div>
         </div>
       </div>
+
+      {selectedSegment && (
+        <Modal
+          open={!!selectedSegment}
+          onClose={() => setSelectedSegment(null)}
+          title={`${selectedSegment.label} — This Week`}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {filteredItems.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "32px 0", color: "var(--mut)", fontSize: "13.5px" }}>
+                No items found
+              </div>
+            ) : (
+              filteredItems.map(item => (
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  onComplete={id => {
+                    onComplete?.(id);
+                    setSelectedSegment(null);
+                  }}
+                  onDelete={id => {
+                    onDelete?.(id);
+                    setSelectedSegment(null);
+                  }}
+                  onEdit={item => {
+                    onEdit?.(item);
+                    setSelectedSegment(null);
+                  }}
+                />
+              ))
+            )}
+          </div>
+        </Modal>
+      )}
     </>
   );
 }

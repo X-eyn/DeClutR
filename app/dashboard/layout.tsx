@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Sidebar from "@/components/dashboard/Sidebar";
+import { ItemsProvider } from "@/components/dashboard/ItemsProvider";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -23,9 +24,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
       background: "var(--bg)",
     }}>
       <Sidebar user={session.user} reminderCount={reminderCount} />
-      <main style={{ minWidth: 0, overflowY: "auto", overflowX: "hidden" }}>
-        {children}
-      </main>
+      <ItemsProvider>
+        <main style={{ minWidth: 0, overflowY: "auto", overflowX: "hidden" }}>
+          {children}
+        </main>
+      </ItemsProvider>
     </div>
   );
 }

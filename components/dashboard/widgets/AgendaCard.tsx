@@ -9,13 +9,6 @@ interface AgendaCardProps {
   onEdit?: (item: TemporalItemWithRelations) => void;
 }
 
-const TYPE_COLORS: Record<string, string> = {
-  DEADLINE: "#6366f1",
-  EVENT:    "#10b981",
-  TASK:     "#8b5cf6",
-  REMINDER: "#f59e0b",
-};
-
 // Cycle through border colors for variety
 const BORDER_COLORS = ["#6366f1", "#10b981", "#8b5cf6", "#f59e0b", "#3b82f6"];
 
@@ -24,8 +17,6 @@ export default function AgendaCard({ items, onEdit }: AgendaCardProps) {
     .filter(i => isToday(new Date(i.dueDate)) && i.status !== "COMPLETED" && i.status !== "ARCHIVED")
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
     .slice(0, 5);
-
-  const todayLabel = format(new Date(), "EEEE, MMMM d");
 
   return (
     <>

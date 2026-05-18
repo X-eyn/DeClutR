@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { format, formatDistanceToNow, startOfWeek, endOfWeek } from "date-fns";
-import type { TemporalItemWithRelations } from "@/types";
+import { useItems } from "@/components/dashboard/ItemsProvider";
 
 const TYPE_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   DEADLINE: { label: "Deadline", color: "#ef4444", bg: "#fee2e2" },
@@ -112,15 +112,7 @@ function TypeBadge({ type }: { type: string }) {
 }
 
 export default function InsightsPage() {
-  const [items, setItems] = useState<TemporalItemWithRelations[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch("/api/items?limit=500")
-      .then(r => r.json())
-      .then(d => setItems(Array.isArray(d) ? d : d.items ?? []))
-      .finally(() => setLoading(false));
-  }, []);
+  const { items, loading } = useItems();
 
   const stats = useMemo(() => {
     const now = new Date();

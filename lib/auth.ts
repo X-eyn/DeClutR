@@ -3,6 +3,16 @@ import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "./prisma";
 
+const authDebugEnabled = ["1", "true", "yes", "on"].includes(
+  (process.env.AUTH_DEBUG ?? process.env.NEXTAUTH_DEBUG ?? "").toLowerCase()
+);
+
+function authDebugLog(...args: Parameters<typeof console.log>) {
+  if (authDebugEnabled) {
+    console.log(...args);
+  }
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers: [
@@ -44,7 +54,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           },
         });
 
-        console.log("[Auth] Sign-in attempt:", user.email);
+        authDebugLog("[Auth] Sign-in attempt:", user.email);
         return true;
       } catch (err) {
         console.error("[Auth] Sign-in callback error:", err);
@@ -52,7 +62,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
     },
     async redirect({ url, baseUrl }) {
-      console.log("[Auth] Redirect callback:", { url, baseUrl });
+      authDebugLog("[Auth] Redirect callback:", { url, baseUrl });
       if (url.startsWith("/")) return `${baseUrl}${url}`;
       if (url.startsWith(baseUrl)) return url;
       return baseUrl;
@@ -73,5 +83,5 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
     error: "/login",
   },
-  debug: process.env.NODE_ENV === "development",
+  debug: authDebugEnabled,
 });

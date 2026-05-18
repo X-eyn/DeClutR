@@ -8,6 +8,7 @@ import Modal from "@/components/ui/Modal";
 import UserAvatar from "@/components/ui/UserAvatar";
 import ItemForm from "@/components/dashboard/ItemForm";
 import ItemCard from "@/components/dashboard/ItemCard";
+import { useItems } from "@/components/dashboard/ItemsProvider";
 import StatCards from "@/components/dashboard/widgets/StatCards";
 import WorkloadChart from "@/components/dashboard/widgets/WorkloadChart";
 import TimeAllocationDonut from "@/components/dashboard/widgets/TimeAllocationDonut";
@@ -23,23 +24,25 @@ import { interpretTimeLeft } from "@/lib/time";
 import type { TemporalItemWithRelations, DashboardStats, CreateItemInput } from "@/types";
 
 interface CommandCenterProps {
-  initialItems: TemporalItemWithRelations[];
-  stats: DashboardStats;
   googleConnected: boolean;
   user?: { name?: string | null; image?: string | null; email?: string | null };
 }
 
 const FILTERS = ["All", "Overdue", "Today", "This Week", "DEADLINE", "EVENT", "TASK", "REMINDER", "COMPLETED"] as const;
 
-export default function CommandCenter({ initialItems, googleConnected, user }: CommandCenterProps) {
+export default function CommandCenter({ googleConnected, user }: CommandCenterProps) {
   const router = useRouter();
   const searchRef = useRef<HTMLInputElement>(null);
-  const [items, setItems] = useState(initialItems);
+  const paletteRef = useRef<HTMLInputElement>(null);
+  const { items, loading, refreshItems, createItem, updateItem, deleteItem, completeItem } = useItems();
   const [showForm, setShowForm] = useState(false);
+  const [quickCreateType, setQuickCreateType] = useState<CreateItemInput["type"] | null>(null);
   const [editItem, setEditItem] = useState<TemporalItemWithRelations | null>(null);
   const [listView, setListView] = useState(false);
   const [filter, setFilter] = useState<string>("All");
   const [search, setSearch] = useState("");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState("");
   const [showBell, setShowBell] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [seeding, setSeeding] = useState(false);
@@ -50,10 +53,7 @@ export default function CommandCenter({ initialItems, googleConnected, user }: C
       const res = await fetch("/api/seed", { method: "POST" });
       const json = await res.json();
       if (json.success) {
-        // Reload items from server
-        const itemsRes = await fetch("/api/items?limit=300");
-        const newItems = await itemsRes.json();
-        if (Array.isArray(newItems)) setItems(newItems);
+        await refreshItems();
       }
     } finally {
       setSeeding(false);
@@ -64,8 +64,9 @@ export default function CommandCenter({ initialItems, googleConnected, user }: C
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
-        searchRef.current?.focus();
-        setListView(true);
+        setPaletteOpen(true);
+        setShowBell(false);
+        setShowUserMenu(false);
       }
     }
     function onClickOutside() {
@@ -79,6 +80,10 @@ export default function CommandCenter({ initialItems, googleConnected, user }: C
       window.removeEventListener("click", onClickOutside);
     };
   }, []);
+
+  useEffect(() => {
+    if (paletteOpen) requestAnimationFrame(() => paletteRef.current?.focus());
+  }, [paletteOpen]);
 
   const stats = useMemo((): DashboardStats => {
     const now = new Date();
@@ -136,58 +141,95 @@ export default function CommandCenter({ initialItems, googleConnected, user }: C
   }, [items, filter, search]);
 
   async function handleCreate(data: CreateItemInput) {
-    const res = await fetch("/api/items", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    const json = await res.json();
-    if (json.item) { setItems(prev => [json.item, ...prev]); setShowForm(false); }
+    const item = await createItem(data);
+    if (item) {
+      setShowForm(false);
+      setQuickCreateType(null);
+    }
   }
 
   async function handleUpdate(data: CreateItemInput) {
     if (!editItem) return;
-    const res = await fetch(`/api/items/${editItem.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    const json = await res.json();
-    if (json.item) { setItems(prev => prev.map(i => i.id === editItem.id ? json.item : i)); setEditItem(null); }
+    const item = await updateItem(editItem.id, data);
+    if (item) setEditItem(null);
   }
 
   async function handleComplete(id: string) {
-    const previous = items;
-    setItems(prev => prev.map(i => i.id === id ? { ...i, status: "COMPLETED" } : i));
-    try {
-      const res = await fetch(`/api/items/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "COMPLETED" }),
-      });
-      if (!res.ok) throw new Error("Failed to complete item");
-      const json = await res.json();
-      if (json.item) setItems(prev => prev.map(i => i.id === id ? json.item : i));
-    } catch {
-      setItems(previous);
-    }
+    await completeItem(id);
   }
 
   async function handleDelete(id: string) {
-    const previous = items;
-    setItems(prev => prev.filter(i => i.id !== id));
-    try {
-      const res = await fetch(`/api/items/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete item");
-    } catch {
-      setItems(previous);
-    }
+    await deleteItem(id);
   }
 
   const displayName = user?.name ?? "User";
   const dateStr = format(new Date(), "EEEE, MMMM d, yyyy");
 
   const showListView = listView || search.trim().length > 0;
+  const paletteCommands = [
+    { id: "create-item", label: "Create item", detail: "Open the full item form" },
+    { id: "create-task", label: "Create task", detail: "Start a task quickly" },
+    { id: "create-reminder", label: "Create reminder", detail: "Start a reminder quickly" },
+    { id: "show-overdue", label: "Show overdue", detail: `${stats.overdue} overdue items` },
+    { id: "show-today", label: "Show today", detail: `${stats.dueToday} due today` },
+    { id: "show-week", label: "Show this week", detail: `${stats.dueThisWeek} due this week` },
+    { id: "search", label: "Search items", detail: "Focus the dashboard search box" },
+    { id: "calendar", label: "Go to Calendar", detail: "Open calendar view" },
+    { id: "tasks", label: "Go to Tasks", detail: "Open task manager" },
+    { id: "reminders", label: "Go to Reminders", detail: "Open reminders" },
+    { id: "settings", label: "Go to Settings", detail: "Open preferences" },
+  ];
+  const visiblePaletteCommands = paletteCommands.filter(command => {
+    const q = paletteQuery.trim().toLowerCase();
+    return !q || command.label.toLowerCase().includes(q) || command.detail.toLowerCase().includes(q);
+  });
+
+  function runPaletteCommand(commandId: string) {
+    setPaletteOpen(false);
+    setPaletteQuery("");
+    switch (commandId) {
+      case "create-task":
+        setQuickCreateType("TASK");
+        setShowForm(true);
+        break;
+      case "create-reminder":
+        setQuickCreateType("REMINDER");
+        setShowForm(true);
+        break;
+      case "show-overdue":
+        setFilter("Overdue");
+        setListView(true);
+        break;
+      case "show-today":
+        setFilter("Today");
+        setListView(true);
+        break;
+      case "show-week":
+        setFilter("This Week");
+        setListView(true);
+        break;
+      case "search":
+        setListView(true);
+        requestAnimationFrame(() => searchRef.current?.focus());
+        break;
+      case "calendar":
+        router.push("/dashboard/calendar");
+        break;
+      case "tasks":
+        router.push("/dashboard/tasks");
+        break;
+      case "reminders":
+        router.push("/dashboard/reminders");
+        break;
+      case "settings":
+        router.push("/dashboard/settings");
+        break;
+      default:
+        setQuickCreateType(null);
+        setShowForm(true);
+        break;
+    }
+  }
 
   return (
     <>
@@ -362,6 +404,22 @@ export default function CommandCenter({ initialItems, googleConnected, user }: C
           grid-column: 1/-1; text-align: center; padding: 52px 0;
           color: var(--mut); font-size: 13.5px;
         }
+        .cmdk-input {
+          width: 100%; box-sizing: border-box; border: 1.5px solid var(--line);
+          background: var(--bg); border-radius: 12px; padding: 12px 14px;
+          color: var(--ink); font: inherit; outline: none; margin-bottom: 12px;
+        }
+        .cmdk-input:focus { border-color: var(--indigo); }
+        .cmdk-list { display: flex; flex-direction: column; gap: 6px; }
+        .cmdk-item {
+          display: flex; align-items: center; justify-content: space-between; gap: 14px;
+          border: 1px solid transparent; background: transparent; border-radius: 10px;
+          padding: 10px 12px; cursor: pointer; text-align: left; font-family: inherit;
+        }
+        .cmdk-item:hover, .cmdk-item:focus { background: var(--line-2); border-color: var(--line); outline: none; }
+        .cmdk-label { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+        .cmdk-detail { font-size: 12px; color: var(--mut); margin-top: 2px; }
+        .cmdk-key { font-size: 11px; color: var(--mut-2); border: 1px solid var(--line); border-radius: 7px; padding: 2px 7px; background: white; }
       `}</style>
 
       <div className="cc-wrap">
@@ -528,7 +586,9 @@ export default function CommandCenter({ initialItems, googleConnected, user }: C
           </div>
         </div>
 
-        {showListView ? (
+        {loading ? (
+          <div className="cc-empty">Loading dashboard...</div>
+        ) : showListView ? (
           /* ---- List View ---- */
           <>
             <div className="cc-filters">
@@ -570,7 +630,7 @@ export default function CommandCenter({ initialItems, googleConnected, user }: C
             <div className="dash-row dash-row-1">
               <StatCards stats={stats} items={items} onEdit={setEditItem} onComplete={handleComplete} onDelete={handleDelete} />
               <WorkloadChart items={items} onEdit={setEditItem} onComplete={handleComplete} onDelete={handleDelete} />
-              <TimeAllocationDonut items={items} />
+              <TimeAllocationDonut items={items} onEdit={setEditItem} onComplete={handleComplete} onDelete={handleDelete} />
             </div>
 
             {/* ROW 2: Heatmap (4fr) | Timeline (5fr) | Free Windows (3fr) */}
@@ -595,8 +655,13 @@ export default function CommandCenter({ initialItems, googleConnected, user }: C
       </div>
 
       {/* Create modal */}
-      <Modal open={showForm} onClose={() => setShowForm(false)} title="Add New Item">
-        <ItemForm onSubmit={handleCreate} onCancel={() => setShowForm(false)} googleConnected={googleConnected} />
+      <Modal open={showForm} onClose={() => { setShowForm(false); setQuickCreateType(null); }} title="Add New Item">
+        <ItemForm
+          onSubmit={handleCreate}
+          onCancel={() => { setShowForm(false); setQuickCreateType(null); }}
+          googleConnected={googleConnected}
+          initialData={quickCreateType ? { type: quickCreateType } : undefined}
+        />
       </Modal>
 
       {/* Edit modal */}
@@ -619,6 +684,30 @@ export default function CommandCenter({ initialItems, googleConnected, user }: C
             }}
           />
         )}
+      </Modal>
+
+      <Modal open={paletteOpen} onClose={() => { setPaletteOpen(false); setPaletteQuery(""); }} title="Command Palette">
+        <input
+          ref={paletteRef}
+          className="cmdk-input"
+          value={paletteQuery}
+          onChange={e => setPaletteQuery(e.target.value)}
+          placeholder="Type a command..."
+          onKeyDown={e => {
+            if (e.key === "Enter" && visiblePaletteCommands[0]) runPaletteCommand(visiblePaletteCommands[0].id);
+          }}
+        />
+        <div className="cmdk-list">
+          {visiblePaletteCommands.map((command, index) => (
+            <button key={command.id} className="cmdk-item" onClick={() => runPaletteCommand(command.id)}>
+              <span>
+                <span className="cmdk-label">{command.label}</span>
+                <span className="cmdk-detail">{command.detail}</span>
+              </span>
+              {index === 0 && <span className="cmdk-key">Enter</span>}
+            </button>
+          ))}
+        </div>
       </Modal>
     </>
   );

@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { signOut } from "next-auth/react";
+import { useItems } from "@/components/dashboard/ItemsProvider";
 import UserAvatar from "@/components/ui/UserAvatar";
-import type { TemporalItemWithRelations } from "@/types";
 
 const PREFS_KEY = "tempoflow_prefs";
 
@@ -76,6 +76,7 @@ function SelectInput({
 
 export default function SettingsPage() {
   const { data: session, status } = useSession();
+  const { items, deleteItem } = useItems();
   const [googleStatus, setGoogleStatus] = useState<GoogleStatus | null>(null);
   const [prefs, setPrefs] = useState<Prefs>(() => {
     if (typeof window === "undefined") return DEFAULT_PREFS;
@@ -114,16 +115,15 @@ export default function SettingsPage() {
 
   async function handleClearCompleted() {
     if (!confirm("This will permanently delete all completed items. Continue?")) return;
+    const completedItems = items.filter((item) => item.status === "COMPLETED");
+    if (completedItems.length === 0) {
+      showToast("No completed items to clear.", "info");
+      return;
+    }
+
     setClearLoading(true);
     try {
-      const res = await fetch("/api/items?status=COMPLETED&limit=500");
-      const json = await res.json();
-      const completedItems: TemporalItemWithRelations[] = Array.isArray(json) ? json : json.items ?? [];
-      if (completedItems.length === 0) {
-        showToast("No completed items to clear.", "info");
-        return;
-      }
-      await Promise.all(completedItems.map(i => fetch(`/api/items/${i.id}`, { method: "DELETE" })));
+      await Promise.all(completedItems.map((item) => deleteItem(item.id)));
       showToast(`Deleted ${completedItems.length} completed item${completedItems.length === 1 ? "" : "s"}.`, "success");
     } catch {
       showToast("Something went wrong. Please try again.", "error");

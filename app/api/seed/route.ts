@@ -41,7 +41,7 @@ export async function POST() {
   const [tUni, tWork, tPersonal, tHealth, tFinance, tResearch] = tags;
 
   // ── DEADLINES ─────────────────────────────────────────────────────────────
-  const deadline1 = await prisma.temporalItem.create({
+  await prisma.temporalItem.create({
     data: {
       userId, type: "DEADLINE", priority: "CRITICAL",
       title: "Machine Learning Final Project",
@@ -52,7 +52,7 @@ export async function POST() {
     },
   });
 
-  const deadline2 = await prisma.temporalItem.create({
+  await prisma.temporalItem.create({
     data: {
       userId, type: "DEADLINE", priority: "HIGH",
       title: "Q3 Financial Report",
@@ -63,7 +63,7 @@ export async function POST() {
     },
   });
 
-  const deadline3 = await prisma.temporalItem.create({
+  await prisma.temporalItem.create({
     data: {
       userId, type: "DEADLINE", priority: "HIGH",
       title: "Thesis Chapter 2 Draft",
@@ -74,7 +74,7 @@ export async function POST() {
     },
   });
 
-  const deadline4 = await prisma.temporalItem.create({
+  await prisma.temporalItem.create({
     data: {
       userId, type: "DEADLINE", priority: "MEDIUM",
       title: "Tax Return Submission",
@@ -85,7 +85,7 @@ export async function POST() {
     },
   });
 
-  const deadline5 = await prisma.temporalItem.create({
+  await prisma.temporalItem.create({
     data: {
       userId, type: "DEADLINE", priority: "MEDIUM",
       title: "Product Design Mockups",
@@ -95,7 +95,7 @@ export async function POST() {
     },
   });
 
-  const deadline6 = await prisma.temporalItem.create({
+  await prisma.temporalItem.create({
     data: {
       userId, type: "DEADLINE", priority: "LOW",
       title: "Annual Performance Review Form",
@@ -105,7 +105,7 @@ export async function POST() {
     },
   });
 
-  const deadline7 = await prisma.temporalItem.create({
+  await prisma.temporalItem.create({
     data: {
       userId, type: "DEADLINE", priority: "HIGH",
       title: "Research Grant Application",

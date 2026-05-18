@@ -1,7 +1,7 @@
-import { after, NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { createCalendarEvent, createGoogleTask } from "@/lib/google";
+import { scheduleCreatedItemGoogleSync } from "@/lib/google-sync";
 import type { CreateItemInput } from "@/types";
 import type { Prisma } from "@prisma/client";
 
@@ -14,18 +14,6 @@ function isItemType(value: string | null): value is CreateItemInput["type"] {
 
 function isItemStatus(value: string | null): value is (typeof ITEM_STATUSES)[number] {
   return ITEM_STATUSES.includes(value as (typeof ITEM_STATUSES)[number]);
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-async function createSyncLog(data: Prisma.SyncLogUncheckedCreateInput) {
-  try {
-    await prisma.syncLog.create({ data });
-  } catch (error) {
-    console.error("Failed to create sync log", error);
-  }
 }
 
 export async function GET(req: NextRequest) {
@@ -95,74 +83,12 @@ export async function POST(req: NextRequest) {
   });
 
   if (syncToCalendar || syncToTasks) {
-    after(async () => {
-      const syncData: Prisma.TemporalItemUpdateInput = {};
-
-      if (syncToCalendar) {
-        try {
-          const googleCalendarEventId = await createCalendarEvent(session.user.id, {
-            title,
-            description,
-            startDate: startDateObj,
-            dueDate: dueDateObj,
-            allDay: allDay ?? false,
-            reminderMinutes: reminderMinutes ?? [15, 60],
-          });
-          syncData.googleCalendarEventId = googleCalendarEventId;
-          await createSyncLog({
-            userId: session.user.id,
-            action: "CREATE_CALENDAR_EVENT",
-            itemId: item.id,
-            itemTitle: title,
-            status: "SUCCESS",
-            message: `Created calendar event ${googleCalendarEventId}`,
-          });
-        } catch (error: unknown) {
-          await createSyncLog({
-            userId: session.user.id,
-            action: "CREATE_CALENDAR_EVENT",
-            itemId: item.id,
-            itemTitle: title,
-            status: "ERROR",
-            message: errorMessage(error),
-          });
-        }
-      }
-
-      if (syncToTasks) {
-        try {
-          const googleTaskId = await createGoogleTask(session.user.id, {
-            title,
-            notes: description,
-            dueDate: dueDateObj,
-          });
-          syncData.googleTaskId = googleTaskId;
-          await createSyncLog({
-            userId: session.user.id,
-            action: "CREATE_GOOGLE_TASK",
-            itemId: item.id,
-            itemTitle: title,
-            status: "SUCCESS",
-            message: `Created task ${googleTaskId}`,
-          });
-        } catch (error: unknown) {
-          await createSyncLog({
-            userId: session.user.id,
-            action: "CREATE_GOOGLE_TASK",
-            itemId: item.id,
-            itemTitle: title,
-            status: "ERROR",
-            message: errorMessage(error),
-          });
-        }
-      }
-
-      if (Object.keys(syncData).length > 0) {
-        await prisma.temporalItem.update({
-          where: { id: item.id },
-          data: { ...syncData, lastSyncedAt: new Date() },
-        });
-      }
+    scheduleCreatedItemGoogleSync({
+      userId: session.user.id,
+      item,
+      syncToCalendar,
+      syncToTasks,
+      calendarReminderMinutes: reminderMinutes ?? [15, 60],
     });
   }
 
