@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { signOut } from "next-auth/react";
@@ -75,19 +76,19 @@ function SelectInput({
 export default function SettingsPage() {
   const { data: session, status } = useSession();
   const [googleStatus, setGoogleStatus] = useState<GoogleStatus | null>(null);
-  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
+  const [prefs, setPrefs] = useState<Prefs>(() => {
+    if (typeof window === "undefined") return DEFAULT_PREFS;
+    try {
+      const stored = localStorage.getItem(PREFS_KEY);
+      return stored ? { ...DEFAULT_PREFS, ...JSON.parse(stored) } : DEFAULT_PREFS;
+    } catch {
+      return DEFAULT_PREFS;
+    }
+  });
   const [toast, setToast] = useState<{ msg: string; type: "info" | "error" | "success" } | null>(null);
   const [clearLoading, setClearLoading] = useState(false);
 
   useEffect(() => {
-    // Load prefs from localStorage
-    try {
-      const stored = localStorage.getItem(PREFS_KEY);
-      if (stored) setPrefs({ ...DEFAULT_PREFS, ...JSON.parse(stored) });
-    } catch {
-      // ignore
-    }
-    // Fetch google status
     fetch("/api/google/connect")
       .then(r => r.json())
       .then(d => setGoogleStatus({ connected: d.connected ?? false, scopes: d.scopes ?? [] }))
@@ -116,7 +117,7 @@ export default function SettingsPage() {
     try {
       const res = await fetch("/api/items?status=COMPLETED&limit=500");
       const json = await res.json();
-      const completedItems: TemporalItemWithRelations[] = json.items ?? [];
+      const completedItems: TemporalItemWithRelations[] = Array.isArray(json) ? json : json.items ?? [];
       if (completedItems.length === 0) {
         showToast("No completed items to clear.", "info");
         return;
@@ -307,12 +308,12 @@ export default function SettingsPage() {
               <div style={{ fontSize: 13.5, color: "var(--mut)", marginBottom: 16 }}>
                 Connect your Google account to sync items to Google Calendar and Google Tasks.
               </div>
-              <a href="/api/auth/signin/google" className="connect-btn">
+              <Link href="/api/auth/signin/google" className="connect-btn">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
                 </svg>
                 Connect Google
-              </a>
+              </Link>
             </div>
           )}
         </SectionCard>
@@ -367,7 +368,7 @@ export default function SettingsPage() {
           <div className="danger-row">
             <div className="danger-info">
               <div className="danger-label">Clear All Completed Items</div>
-              <div className="danger-desc">Permanently delete all items with "Completed" status. This cannot be undone.</div>
+              <div className="danger-desc">Permanently delete all items with &quot;Completed&quot; status. This cannot be undone.</div>
             </div>
             <button
               className="danger-btn red"

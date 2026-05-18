@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 
@@ -48,8 +49,22 @@ const nav = [
   },
 ];
 
-export default function Sidebar({ user, reminderCount = 0 }: SidebarProps) {
+export default function Sidebar({ reminderCount = 0 }: SidebarProps) {
   const pathname = usePathname();
+  const [focusMode, setFocusMode] = useState(() =>
+    typeof window !== "undefined" && localStorage.getItem("tempoflow_focus_mode") === "true"
+  );
+
+  useEffect(() => {
+    document.documentElement.dataset.focusMode = focusMode ? "true" : "false";
+  }, [focusMode]);
+
+  function toggleFocusMode() {
+    const next = !focusMode;
+    setFocusMode(next);
+    localStorage.setItem("tempoflow_focus_mode", String(next));
+    document.documentElement.dataset.focusMode = next ? "true" : "false";
+  }
 
   return (
     <>
@@ -107,6 +122,15 @@ export default function Sidebar({ user, reminderCount = 0 }: SidebarProps) {
           font-family: inherit; transition: background .15s ease;
         }
         .focus-btn:hover { background: var(--indigo-deep); }
+        :root[data-focus-mode="true"] .dash-row-2,
+        :root[data-focus-mode="true"] .dash-row-3,
+        :root[data-focus-mode="true"] .filter-tabs,
+        :root[data-focus-mode="true"] .seed-btn {
+          display: none !important;
+        }
+        :root[data-focus-mode="true"] .dash-row-1 {
+          grid-template-columns: 1fr !important;
+        }
         .help-link {
           margin-top: 18px; display: flex; align-items: center; gap: 10px;
           color: var(--mut); font-size: 13px; cursor: pointer;
@@ -152,16 +176,15 @@ export default function Sidebar({ user, reminderCount = 0 }: SidebarProps) {
           </div>
           <div className="focus-title">Focus Mode</div>
           <div className="focus-sub">Minimize distractions<br/>and get things done.</div>
-          <button className="focus-btn" onClick={() => {
-            document.documentElement.style.setProperty("--focus-mode", "1");
-            alert("Focus Mode: All distracting widgets minimized. Press OK to continue.");
-          }}>Start Focus</button>
+          <button className="focus-btn" onClick={toggleFocusMode}>
+            {focusMode ? "Exit Focus" : "Start Focus"}
+          </button>
         </div>
 
         <button className="help-link" onClick={() => signOut({ callbackUrl: "/login" })}>
           <div className="help-left">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            <span>Need help? · Sign out</span>
+            <span>Sign out</span>
           </div>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
         </button>

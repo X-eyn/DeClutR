@@ -1,10 +1,35 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-import { startOfWeek, addDays, isSameDay, isToday } from "date-fns";
+import { startOfWeek, addDays, differenceInMinutes, isSameDay, isToday } from "date-fns";
 import type { TemporalItemWithRelations } from "@/types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const FALLBACK_HOURS: Record<string, number> = { TASK: 2, EVENT: 1.5, DEADLINE: 1, REMINDER: 0.25 };
+
+function shouldUseTimedRange(item: TemporalItemWithRelations, start: Date, due: Date) {
+  return item.type === "EVENT" || isSameDay(start, due);
+}
+
+function itemHours(item: TemporalItemWithRelations): number {
+  if (item.allDay) return 8;
+
+  if (item.startDate) {
+    const start = new Date(item.startDate);
+    const due = new Date(item.dueDate);
+    if (
+      !Number.isNaN(start.getTime()) &&
+      !Number.isNaN(due.getTime()) &&
+      start < due &&
+      shouldUseTimedRange(item, start, due)
+    ) {
+      const hours = differenceInMinutes(due, start) / 60;
+      return Math.min(Math.max(hours, 0.25), 8);
+    }
+  }
+
+  return FALLBACK_HOURS[item.type] ?? 1;
+}
 
 export default function WorkloadChart({ items }: { items: TemporalItemWithRelations[] }) {
   const [hovered, setHovered] = useState<number | null>(null);
@@ -19,15 +44,15 @@ export default function WorkloadChart({ items }: { items: TemporalItemWithRelati
     const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
     return DAYS.map((label, i) => {
       const date = addDays(weekStart, i);
-      const count = items.filter(
+      const dayItems = items.filter(
         it => it.status !== "COMPLETED" && it.status !== "ARCHIVED" && isSameDay(new Date(it.dueDate), date)
-      ).length;
-      return { label, count, today: isToday(date) };
+      );
+      const hours = dayItems.reduce((sum, item) => sum + itemHours(item), 0);
+      return { label, count: dayItems.length, hours: Math.round(hours * 10) / 10, today: isToday(date) };
     });
   }, [items]);
 
-  const maxCount = Math.max(...bars.map(b => b.count), 1);
-  const toHours = (c: number) => ((c / maxCount) * 8).toFixed(1);
+  const toHours = (hours: number) => hours.toFixed(1);
 
   const hBar = hovered !== null ? bars[hovered] : null;
 
@@ -159,7 +184,7 @@ export default function WorkloadChart({ items }: { items: TemporalItemWithRelati
         <div className="wl-head">
           <div className="wl-title">Weekly Workload</div>
           <div className="wl-hover-info" style={{ opacity: hBar ? 1 : 0 }}>
-            {hBar ? `${hBar.count} item${hBar.count !== 1 ? "s" : ""} · ${toHours(hBar.count)}h` : "—"}
+            {hBar ? `${hBar.count} item${hBar.count !== 1 ? "s" : ""} | ${toHours(hBar.hours)}h` : "-"}
           </div>
         </div>
 
@@ -173,7 +198,7 @@ export default function WorkloadChart({ items }: { items: TemporalItemWithRelati
 
             <div className="wl-bars-row">
               {bars.map((b, i) => {
-                const heightPct = (b.count / maxCount) * 100;
+                const heightPct = Math.min((b.hours / 8) * 100, 100);
                 const isLit    = b.today || hovered === i;
                 const isDimmed = hovered !== null && hovered !== i;
 
@@ -191,7 +216,7 @@ export default function WorkloadChart({ items }: { items: TemporalItemWithRelati
                         transform: hovered === i ? "translateY(0)" : "translateY(5px)",
                       }}
                     >
-                      {toHours(b.count)}h
+                      {toHours(b.hours)}h
                     </div>
 
                     <div

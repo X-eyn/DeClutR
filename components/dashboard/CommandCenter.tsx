@@ -30,7 +30,7 @@ interface CommandCenterProps {
 
 const FILTERS = ["All", "Overdue", "Today", "This Week", "DEADLINE", "EVENT", "TASK", "REMINDER", "COMPLETED"] as const;
 
-export default function CommandCenter({ initialItems, stats: initialStats, googleConnected, user }: CommandCenterProps) {
+export default function CommandCenter({ initialItems, googleConnected, user }: CommandCenterProps) {
   const router = useRouter();
   const searchRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState(initialItems);
@@ -577,7 +577,7 @@ export default function CommandCenter({ initialItems, stats: initialStats, googl
 
             {/* ROW 2: Heatmap (4fr) | Timeline (5fr) | Free Windows (3fr) */}
             <div className="dash-row dash-row-2">
-              <HeatmapCard items={items} />
+              <HeatmapCard items={items} onEdit={setEditItem} />
               <TimelineGantt items={items} onEdit={setEditItem} />
               <FreeTimeWindows items={items} />
             </div>
@@ -588,7 +588,7 @@ export default function CommandCenter({ initialItems, stats: initialStats, googl
               <AgendaCard items={items} onEdit={setEditItem} />
               <MiniCalendar items={items} />
               <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                <QuickNotes items={items} onComplete={handleComplete} onAddItem={() => setShowForm(true)} />
+                <QuickNotes items={items} onComplete={handleComplete} onAddItem={() => router.push("/dashboard/notes")} />
                 <InsightsCard stats={stats} items={items} />
               </div>
             </div>

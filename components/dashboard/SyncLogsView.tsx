@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { format } from "date-fns";
-import { CheckCircle, XCircle, RefreshCw, Calendar, CheckSquare, Trash2, Edit2, ExternalLink } from "lucide-react";
+import { CheckCircle, XCircle, RefreshCw, Calendar, CheckSquare, Trash2, Edit2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SyncLogEntry } from "@/types";
 
@@ -103,12 +104,12 @@ export default function SyncLogsView({ initialLogs, googleConnected, scopes }: S
           </div>
         </div>
         {!googleConnected && (
-          <a
+          <Link
             href="/api/auth/signin"
             className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-900 rounded-xl text-sm font-medium hover:bg-slate-100 transition-colors"
           >
             Connect Google Account
-          </a>
+          </Link>
         )}
       </div>
 

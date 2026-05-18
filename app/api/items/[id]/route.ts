@@ -3,6 +3,11 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { updateCalendarEvent, deleteCalendarEvent, updateGoogleTask, deleteGoogleTask } from "@/lib/google";
 import type { UpdateItemInput } from "@/types";
+import type { Prisma } from "@prisma/client";
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
 
 async function getItem(userId: string, id: string) {
   return prisma.temporalItem.findFirst({ where: { id, userId }, include: { checklists: true, tags: true } });
@@ -44,10 +49,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await prisma.syncLog.create({
         data: { userId: session.user.id, action: "UPDATE_CALENDAR_EVENT", itemId: id, itemTitle: existing.title, status: "SUCCESS" },
       });
-    } catch (e: any) {
-      syncErrors.push(`Calendar: ${e.message}`);
+    } catch (error: unknown) {
+      const message = errorMessage(error);
+      syncErrors.push(`Calendar: ${message}`);
       await prisma.syncLog.create({
-        data: { userId: session.user.id, action: "UPDATE_CALENDAR_EVENT", itemId: id, itemTitle: existing.title, status: "ERROR", message: e.message },
+        data: { userId: session.user.id, action: "UPDATE_CALENDAR_EVENT", itemId: id, itemTitle: existing.title, status: "ERROR", message },
       });
     }
   }
@@ -64,8 +70,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await prisma.syncLog.create({
         data: { userId: session.user.id, action: "UPDATE_GOOGLE_TASK", itemId: id, itemTitle: existing.title, status: "SUCCESS" },
       });
-    } catch (e: any) {
-      syncErrors.push(`Tasks: ${e.message}`);
+    } catch (error: unknown) {
+      syncErrors.push(`Tasks: ${errorMessage(error)}`);
     }
   }
 
@@ -77,21 +83,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       )
     : undefined;
 
+  const data: Prisma.TemporalItemUpdateInput = {
+    ...(body.title ? { title: body.title } : {}),
+    ...(body.description !== undefined ? { description: body.description } : {}),
+    ...(body.type ? { type: body.type } : {}),
+    ...(body.priority ? { priority: body.priority } : {}),
+    ...(body.status ? { status: body.status } : {}),
+    ...(body.dueDate ? { dueDate: dueDateObj } : {}),
+    ...(body.startDate ? { startDate: startDateObj } : {}),
+    ...(body.allDay !== undefined ? { allDay: body.allDay } : {}),
+    ...(body.reminderMinutes ? { reminderMinutes: body.reminderMinutes } : {}),
+    ...(tagRecords ? { tags: { set: tagRecords.map((t) => ({ id: t.id })) } } : {}),
+    lastSyncedAt: (existing.googleCalendarEventId || existing.googleTaskId) ? new Date() : undefined,
+  };
+
   const updated = await prisma.temporalItem.update({
     where: { id },
-    data: {
-      ...(body.title ? { title: body.title } : {}),
-      ...(body.description !== undefined ? { description: body.description } : {}),
-      ...(body.type ? { type: body.type as any } : {}),
-      ...(body.priority ? { priority: body.priority as any } : {}),
-      ...(body.status ? { status: body.status as any } : {}),
-      ...(body.dueDate ? { dueDate: dueDateObj } : {}),
-      ...(body.startDate ? { startDate: startDateObj } : {}),
-      ...(body.allDay !== undefined ? { allDay: body.allDay } : {}),
-      ...(body.reminderMinutes ? { reminderMinutes: body.reminderMinutes } : {}),
-      ...(tagRecords ? { tags: { set: tagRecords.map((t) => ({ id: t.id })) } } : {}),
-      lastSyncedAt: (existing.googleCalendarEventId || existing.googleTaskId) ? new Date() : undefined,
-    },
+    data,
     include: { checklists: true, tags: true },
   });
 
@@ -113,15 +121,15 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       await prisma.syncLog.create({
         data: { userId: session.user.id, action: "DELETE_CALENDAR_EVENT", itemId: id, itemTitle: existing.title, status: "SUCCESS" },
       });
-    } catch (e: any) {
-      syncErrors.push(`Calendar: ${e.message}`);
+    } catch (error: unknown) {
+      syncErrors.push(`Calendar: ${errorMessage(error)}`);
     }
   }
 
   if (existing.googleTaskId) {
     try {
       await deleteGoogleTask(session.user.id, existing.googleTaskId);
-    } catch (_e) {}
+    } catch {}
   }
 
   await prisma.temporalItem.delete({ where: { id } });

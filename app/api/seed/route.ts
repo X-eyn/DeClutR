@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import type { ItemType, Priority } from "@prisma/client";
 
 // Only allowed in development
 export async function POST() {
@@ -400,7 +401,7 @@ export async function POST() {
   });
 
   // ── COMPLETED ITEMS (to populate completion rate & history) ───────────────
-  const completedItems = [
+  const completedItems: Array<{ title: string; type: ItemType; priority: Priority; daysAgo: number }> = [
     { title: "Set up development environment",     type: "TASK",     priority: "HIGH",   daysAgo: -3 },
     { title: "Database schema design",             type: "TASK",     priority: "HIGH",   daysAgo: -2 },
     { title: "User authentication implementation", type: "TASK",     priority: "CRITICAL", daysAgo: -2 },
@@ -417,8 +418,8 @@ export async function POST() {
     await prisma.temporalItem.create({
       data: {
         userId,
-        type: item.type as any,
-        priority: item.priority as any,
+        type: item.type,
+        priority: item.priority,
         status: "COMPLETED",
         title: item.title,
         dueDate: d(item.daysAgo, 17, 0),

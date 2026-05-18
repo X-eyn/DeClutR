@@ -50,10 +50,11 @@ export default function TasksPage() {
     }
   }, []);
 
-  useEffect(() => { fetchItems(); }, [fetchItems]);
+  useEffect(() => {
+    queueMicrotask(() => void fetchItems());
+  }, [fetchItems]);
 
   const grouped = useMemo(() => {
-    const now = new Date();
     const active = items.filter(
       (i) => i.status !== "COMPLETED" && i.status !== "ARCHIVED" && !isPast(new Date(i.dueDate))
     ).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());

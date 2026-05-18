@@ -6,6 +6,10 @@ import ItemForm from "@/components/dashboard/ItemForm";
 import type { TemporalItemWithRelations, CreateItemInput } from "@/types";
 import { format } from "date-fns";
 
+function isNoteItem(item: TemporalItemWithRelations) {
+  return item.type === "TASK" && item.status !== "ARCHIVED" && new Date(item.dueDate).getFullYear() >= 2099;
+}
+
 export default function NotesPage() {
   const [notes, setNotes] = useState<TemporalItemWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,7 +26,7 @@ export default function NotesPage() {
       .then(json => {
         if (cancelled) return;
         const items = Array.isArray(json) ? json : json.items ?? [];
-        setNotes(items.filter((item: TemporalItemWithRelations) => item.status !== "ARCHIVED"));
+        setNotes(items.filter(isNoteItem));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

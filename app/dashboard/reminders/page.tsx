@@ -16,7 +16,6 @@ function groupReminders(items: TemporalItemWithRelations[]): ReminderGroup[] {
   const active = items.filter(
     (i) => i.status !== "ARCHIVED" && i.status !== "COMPLETED"
   );
-  const now = new Date();
 
   const overdue = active
     .filter((i) => isPast(new Date(i.dueDate)) && !isToday(new Date(i.dueDate)))
@@ -72,7 +71,9 @@ export default function RemindersPage() {
     }
   }, []);
 
-  useEffect(() => { fetchItems(); }, [fetchItems]);
+  useEffect(() => {
+    queueMicrotask(() => void fetchItems());
+  }, [fetchItems]);
 
   const groups = useMemo(() => groupReminders(items), [items]);
   const totalActive = groups.reduce((sum, g) => sum + g.items.length, 0);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-import { isThisWeek, differenceInHours } from "date-fns";
+import { differenceInMinutes, isSameDay, isThisWeek } from "date-fns";
 import type { TemporalItemWithRelations } from "@/types";
 
 interface Segment {
@@ -23,11 +23,27 @@ const SEGMENTS = [
 
 const FALLBACK_HOURS: Record<string, number> = { TASK: 2, EVENT: 1.5, DEADLINE: 1, REMINDER: 0.25 };
 
+function shouldUseTimedRange(item: TemporalItemWithRelations, start: Date, due: Date) {
+  return item.type === "EVENT" || isSameDay(start, due);
+}
+
 function itemHours(item: TemporalItemWithRelations): number {
+  if (item.allDay) return 8;
+
   if (item.startDate) {
-    const h = differenceInHours(new Date(item.dueDate), new Date(item.startDate));
-    return Math.max(h, 0.5);
+    const start = new Date(item.startDate);
+    const due = new Date(item.dueDate);
+    if (
+      !Number.isNaN(start.getTime()) &&
+      !Number.isNaN(due.getTime()) &&
+      start < due &&
+      shouldUseTimedRange(item, start, due)
+    ) {
+      const hours = differenceInMinutes(due, start) / 60;
+      return Math.min(Math.max(hours, 0.25), 8);
+    }
   }
+
   return FALLBACK_HOURS[item.type] ?? 1;
 }
 
@@ -40,7 +56,7 @@ export default function TimeAllocationDonut({ items }: { items: TemporalItemWith
     return () => cancelAnimationFrame(id);
   }, []);
 
-  const { segments, totalHours, isPlaceholder } = useMemo(() => {
+  const { segments, totalHours } = useMemo(() => {
     const weekItems = items.filter(
       i =>
         i.status !== "COMPLETED" &&
@@ -60,14 +76,13 @@ export default function TimeAllocationDonut({ items }: { items: TemporalItemWith
 
     if (totalH === 0) {
       return {
-        segments: SEGMENTS.map((s, i) => ({
+        segments: SEGMENTS.map(s => ({
           ...s,
-          pct: [56, 20, 12, 12][i],
+          pct: 0,
           hours: 0,
           count: 0,
         })) as Segment[],
-        totalHours: 16,
-        isPlaceholder: true,
+        totalHours: 0,
       };
     }
 
@@ -81,18 +96,17 @@ export default function TimeAllocationDonut({ items }: { items: TemporalItemWith
     const drift = raw.reduce((a, s) => a + s.pct, 0) - 100;
     if (drift !== 0) raw[0].pct -= drift;
 
-    return { segments: raw, totalHours: Math.round(totalH * 10) / 10, isPlaceholder: false };
+    return { segments: raw, totalHours: Math.round(totalH * 10) / 10 };
   }, [items]);
 
   // r = 15.915 → circumference ≈ 100, easy % math
   const R = 15.915;
-  let cursor = 25;
-  const arcs = segments.map(s => {
-    const dashLen = (s.pct / 100) * 100;
-    const arc = { ...s, dashLen, dashOffset: -(cursor - 25) };
-    cursor += dashLen;
-    return arc;
-  });
+  const arcs = segments.reduce<Array<Segment & { dashLen: number; dashOffset: number }>>((acc, segment) => {
+    const dashLen = (segment.pct / 100) * 100;
+    const previousLength = acc.reduce((sum, arc) => sum + arc.dashLen, 0);
+    acc.push({ ...segment, dashLen, dashOffset: -previousLength });
+    return acc;
+  }, []);
 
   const hSeg = hovered !== null ? segments[hovered] : null;
   const centerVal = hSeg
@@ -215,9 +229,6 @@ export default function TimeAllocationDonut({ items }: { items: TemporalItemWith
           <div className="alloc-title">
             Time Allocation <span className="muted">(This Week)</span>
           </div>
-          {isPlaceholder && (
-            <span style={{ fontSize: 11, color: "var(--mut)", fontStyle: "italic" }}>demo</span>
-          )}
         </div>
 
         <div className="alloc-body">

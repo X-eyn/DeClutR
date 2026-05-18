@@ -5,7 +5,7 @@ import {
   startOfMonth, endOfMonth, eachDayOfInterval, getDay,
   format, isSameDay, isToday, addMonths, subMonths, isSameMonth,
 } from "date-fns";
-import { urgencyDot, interpretTimeLeft } from "@/lib/time";
+import { interpretTimeLeft } from "@/lib/time";
 import type { TemporalItemWithRelations } from "@/types";
 
 interface MiniCalendarProps {
@@ -39,7 +39,7 @@ export default function MiniCalendar({ items }: MiniCalendarProps) {
 
   function dotForDay(date: Date) {
     const dayItems = items.filter(
-      i => isSameDay(new Date(i.dueDate), date) && i.status !== "COMPLETED"
+      i => isSameDay(new Date(i.dueDate), date) && i.status !== "COMPLETED" && i.status !== "ARCHIVED"
     );
     if (dayItems.length === 0) return null;
     const tl = interpretTimeLeft(new Date(dayItems[0].dueDate));

@@ -3,7 +3,22 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createCalendarEvent, createGoogleTask } from "@/lib/google";
 import type { CreateItemInput } from "@/types";
-import { isToday, isThisWeek, isPast } from "date-fns";
+import type { Prisma } from "@prisma/client";
+
+const ITEM_TYPES = ["DEADLINE", "EVENT", "REMINDER", "TASK"] as const;
+const ITEM_STATUSES = ["ACTIVE", "COMPLETED", "ARCHIVED", "OVERDUE"] as const;
+
+function isItemType(value: string | null): value is CreateItemInput["type"] {
+  return ITEM_TYPES.includes(value as CreateItemInput["type"]);
+}
+
+function isItemStatus(value: string | null): value is (typeof ITEM_STATUSES)[number] {
+  return ITEM_STATUSES.includes(value as (typeof ITEM_STATUSES)[number]);
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -13,13 +28,12 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get("status");
   const type = searchParams.get("type");
   const limit = parseInt(searchParams.get("limit") ?? "100");
+  const where: Prisma.TemporalItemWhereInput = { userId: session.user.id };
+  if (isItemStatus(status)) where.status = status;
+  if (isItemType(type)) where.type = type;
 
   const items = await prisma.temporalItem.findMany({
-    where: {
-      userId: session.user.id,
-      ...(status ? { status: status as any } : {}),
-      ...(type ? { type: type as any } : {}),
-    },
+    where,
     include: { checklists: { orderBy: { sortOrder: "asc" } }, tags: true },
     orderBy: { dueDate: "asc" },
     take: limit,
@@ -79,15 +93,16 @@ export async function POST(req: NextRequest) {
           message: `Created calendar event ${googleCalendarEventId}`,
         },
       });
-    } catch (e: any) {
-      syncErrors.push(`Calendar: ${e.message}`);
+    } catch (error: unknown) {
+      const message = errorMessage(error);
+      syncErrors.push(`Calendar: ${message}`);
       await prisma.syncLog.create({
         data: {
           userId: session.user.id,
           action: "CREATE_CALENDAR_EVENT",
           itemTitle: title,
           status: "ERROR",
-          message: e.message,
+          message,
         },
       });
     }
@@ -109,15 +124,16 @@ export async function POST(req: NextRequest) {
           message: `Created task ${googleTaskId}`,
         },
       });
-    } catch (e: any) {
-      syncErrors.push(`Tasks: ${e.message}`);
+    } catch (error: unknown) {
+      const message = errorMessage(error);
+      syncErrors.push(`Tasks: ${message}`);
       await prisma.syncLog.create({
         data: {
           userId: session.user.id,
           action: "CREATE_GOOGLE_TASK",
           itemTitle: title,
           status: "ERROR",
-          message: e.message,
+          message,
         },
       });
     }
@@ -128,8 +144,8 @@ export async function POST(req: NextRequest) {
       userId: session.user.id,
       title,
       description,
-      type: type as any,
-      priority: (priority as any) ?? "MEDIUM",
+      type,
+      priority: priority ?? "MEDIUM",
       dueDate: dueDateObj,
       startDate: startDateObj,
       allDay: allDay ?? false,

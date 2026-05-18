@@ -34,14 +34,17 @@ export default function CalendarPage() {
       const res = await fetch("/api/items?limit=500");
       if (res.ok) {
         const data = await res.json();
-        setItems(Array.isArray(data) ? data : []);
+        const liveItems: TemporalItemWithRelations[] = Array.isArray(data) ? data : [];
+        setItems(liveItems.filter(item => item.status !== "ARCHIVED"));
       }
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { fetchItems(); }, [fetchItems]);
+  useEffect(() => {
+    queueMicrotask(() => void fetchItems());
+  }, [fetchItems]);
 
   const cells = useMemo(() => {
     const start = startOfMonth(month);
@@ -56,7 +59,7 @@ export default function CalendarPage() {
 
   function itemsForDay(day: Date) {
     return items.filter(
-      (item) => isSameDay(parseISO(new Date(item.dueDate).toISOString()), day)
+      (item) => item.status !== "ARCHIVED" && isSameDay(parseISO(new Date(item.dueDate).toISOString()), day)
     );
   }
 

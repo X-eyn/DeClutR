@@ -14,6 +14,7 @@ export async function GET() {
   const connected = !!account?.access_token;
   const hasCalendarScope = account?.scope?.includes("calendar.events") ?? false;
   const hasTasksScope = account?.scope?.includes("tasks") ?? false;
+  const scopes = account?.scope?.split(/\s+/).filter(Boolean) ?? [];
 
-  return NextResponse.json({ connected, hasCalendarScope, hasTasksScope });
+  return NextResponse.json({ connected, hasCalendarScope, hasTasksScope, scopes });
 }

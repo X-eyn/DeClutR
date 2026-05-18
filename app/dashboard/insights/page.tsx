@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { format, formatDistanceToNow, isThisWeek, startOfWeek, endOfWeek } from "date-fns";
+import { format, formatDistanceToNow, startOfWeek, endOfWeek } from "date-fns";
 import type { TemporalItemWithRelations } from "@/types";
 
 const TYPE_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -118,7 +118,7 @@ export default function InsightsPage() {
   useEffect(() => {
     fetch("/api/items?limit=500")
       .then(r => r.json())
-      .then(d => setItems(d.items ?? []))
+      .then(d => setItems(Array.isArray(d) ? d : d.items ?? []))
       .finally(() => setLoading(false));
   }, []);
 
@@ -150,11 +150,11 @@ export default function InsightsPage() {
       items.filter(i => i.priority === p && i.status !== "ARCHIVED").length,
     ]);
 
-    const recent = [...items]
+    const recent = [...nonArchived]
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, 10);
 
-    const recentCompleted = [...items]
+    const recentCompleted = [...nonArchived]
       .filter(i => i.status === "COMPLETED")
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 10);

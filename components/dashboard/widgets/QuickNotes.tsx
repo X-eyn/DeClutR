@@ -12,7 +12,12 @@ interface QuickNotesProps {
 
 export default function QuickNotes({ items, onComplete, onAddItem }: QuickNotesProps) {
   const tasks = items
-    .filter(i => i.type === "TASK" && i.status !== "COMPLETED" && i.status !== "ARCHIVED")
+    .filter(i =>
+      i.type === "TASK" &&
+      i.status !== "COMPLETED" &&
+      i.status !== "ARCHIVED" &&
+      new Date(i.dueDate).getFullYear() >= 2099
+    )
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
     .slice(0, 4);
 
@@ -83,7 +88,7 @@ export default function QuickNotes({ items, onComplete, onAddItem }: QuickNotesP
         </div>
 
         {tasks.length === 0 ? (
-          <div className="qn-empty">All clear — add something!</div>
+          <div className="qn-empty">No notes yet.</div>
         ) : (
           tasks.map(item => {
             const isDone = done.has(item.id);

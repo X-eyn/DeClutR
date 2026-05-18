@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { isThisWeek, differenceInHours } from "date-fns";
+import { format, isThisWeek, differenceInHours } from "date-fns";
 import type { DashboardStats, TemporalItemWithRelations } from "@/types";
 
 interface InsightsCardProps {
@@ -41,7 +41,7 @@ function IndigoIcon() {
   );
 }
 
-export default function InsightsCard({ stats, items }: InsightsCardProps) {
+export default function InsightsCard({ items }: InsightsCardProps) {
   const insights = useMemo((): Insight[] => {
     const now = new Date();
     const active = items.filter(i => i.status !== "COMPLETED" && i.status !== "ARCHIVED");
@@ -80,13 +80,22 @@ export default function InsightsCard({ stats, items }: InsightsCardProps) {
       });
     }
 
-    // Insight 3: most productive day hint or schedule insight
+    // Insight 3: busiest day from the actual current-week schedule
     const weekItems = active.filter(i => isThisWeek(new Date(i.dueDate), { weekStartsOn: 1 }));
     if (weekItems.length > 0) {
+      const counts = new Map<string, { label: string; count: number }>();
+      for (const item of weekItems) {
+        const due = new Date(item.dueDate);
+        const key = format(due, "yyyy-MM-dd");
+        const current = counts.get(key) ?? { label: format(due, "EEEE"), count: 0 };
+        current.count += 1;
+        counts.set(key, current);
+      }
+      const busiest = Array.from(counts.values()).sort((a, b) => b.count - a.count)[0];
       results.push({
         variant: "indigo",
         icon: <IndigoIcon />,
-        text: <>You&apos;re most productive on <b>Tuesday afternoons</b>.</>,
+        text: <>Your busiest day is <b>{busiest.label}</b> with <b>{busiest.count} item{busiest.count !== 1 ? "s" : ""}</b>.</>,
       });
     } else {
       results.push({
@@ -106,7 +115,7 @@ export default function InsightsCard({ stats, items }: InsightsCardProps) {
     }
 
     return results.slice(0, 3);
-  }, [stats, items]);
+  }, [items]);
 
   const icoStyle: Record<InsightVariant, React.CSSProperties> = {
     amber:  { background: "#fef3c7", color: "#b45309" },

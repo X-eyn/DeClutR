@@ -1,68 +1,208 @@
 "use client";
 
 import React, { useMemo, useState, useEffect, useCallback } from "react";
-import { startOfWeek, addDays, isSameDay } from "date-fns";
+import { addDays, format, isSameDay, startOfDay, startOfWeek } from "date-fns";
 import type { TemporalItemWithRelations } from "@/types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const HOUR_LABELS = ["6 AM", "9 AM", "12 PM", "3 PM", "6 PM", "9 PM"];
-const PALETTE = ["#f1f2f7", "#dbe1ff", "#a5b4fc", "#6366f1", "#4338ca"];
-const SLOT_COUNT = 28;
-const SLOT_START_HOUR = 6;
+const PALETTE = ["#f8fafc", "#dbeafe", "#93c5fd", "#4f46e5", "#312e81"];
+const SLOT_COUNT = 24;
+const SLOT_MINUTES = 60;
+const DAY_MINUTES = 24 * 60;
 
-interface CellInfo { di: number; si: number; val: number }
+type ItemWindow = {
+  item: TemporalItemWithRelations;
+  startMin: number;
+  endMin: number;
+  label: string;
+};
 
-function slotLabel(si: number) {
-  const h = SLOT_START_HOUR + Math.floor(si / 2);
-  const m = (si % 2) * 30;
-  const suffix = h < 12 ? "AM" : "PM";
-  const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
-  return `${h12}:${m === 0 ? "00" : "30"} ${suffix}`;
+type HeatmapCell = {
+  di: number;
+  si: number;
+  date: Date;
+  startMin: number;
+  endMin: number;
+  label: string;
+  items: ItemWindow[];
+  intensity: number;
+};
+
+interface HeatmapCardProps {
+  items: TemporalItemWithRelations[];
+  onEdit?: (item: TemporalItemWithRelations) => void;
 }
 
-export default function HeatmapCard({ items }: { items: TemporalItemWithRelations[] }) {
+function toMinutes(date: Date) {
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+function clampMinutes(value: number) {
+  return Math.max(0, Math.min(DAY_MINUTES, value));
+}
+
+function hourLabel(minutes: number) {
+  if (minutes >= DAY_MINUTES) return "12 AM";
+  const hour = Math.floor(minutes / 60);
+  if (hour === 0) return "12 AM";
+  if (hour < 12) return `${hour} AM`;
+  if (hour === 12) return "12 PM";
+  return `${hour - 12} PM`;
+}
+
+function slotLabel(startMin: number, endMin: number) {
+  return `${hourLabel(startMin)}-${hourLabel(endMin)}`;
+}
+
+function formatItemTime(item: TemporalItemWithRelations, window: Pick<ItemWindow, "startMin" | "endMin" | "label">) {
+  if (item.allDay) return "All day";
+  if (item.startDate) {
+    const start = new Date(item.startDate);
+    const due = new Date(item.dueDate);
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(due.getTime()) && start < due && shouldUseTimedRange(item, start, due)) {
+      return `${format(start, "h:mm a")} - ${format(due, "h:mm a")}`;
+    }
+  }
+  return window.label;
+}
+
+function shouldUseTimedRange(item: TemporalItemWithRelations, start: Date, due: Date) {
+  return item.type === "EVENT" || isSameDay(start, due);
+}
+
+function getItemWindowForDay(item: TemporalItemWithRelations, day: Date): ItemWindow | null {
+  const due = new Date(item.dueDate);
+  if (Number.isNaN(due.getTime())) return null;
+
+  const dayStart = startOfDay(day);
+  const dayEnd = addDays(dayStart, 1);
+
+  if (item.allDay) {
+    const start = item.startDate ? new Date(item.startDate) : null;
+    const spansDay =
+      start && !Number.isNaN(start.getTime()) && start < due
+        ? due > dayStart && start < dayEnd
+        : isSameDay(due, day);
+
+    if (!spansDay) return null;
+
+    return {
+      item,
+      startMin: 0,
+      endMin: DAY_MINUTES,
+      label: "All day",
+    };
+  }
+
+  if (item.startDate) {
+    const start = new Date(item.startDate);
+    if (
+      !Number.isNaN(start.getTime()) &&
+      start < due &&
+      due > dayStart &&
+      start < dayEnd &&
+      shouldUseTimedRange(item, start, due)
+    ) {
+      const startMin = clampMinutes(isSameDay(start, day) ? toMinutes(start) : 0);
+      const endMin = clampMinutes(isSameDay(due, day) ? toMinutes(due) : DAY_MINUTES);
+      if (endMin > startMin) {
+        return {
+          item,
+          startMin,
+          endMin,
+          label: `${format(start, "h:mm a")} - ${format(due, "h:mm a")}`,
+        };
+      }
+    }
+  }
+
+  if (!isSameDay(due, day)) return null;
+
+  const dueMin = clampMinutes(toMinutes(due));
+  const startMin = Math.min(Math.floor(dueMin / SLOT_MINUTES) * SLOT_MINUTES, DAY_MINUTES - SLOT_MINUTES);
+
+  return {
+    item,
+    startMin,
+    endMin: startMin + SLOT_MINUTES,
+    label: `Due ${format(due, "h:mm a")}`,
+  };
+}
+
+function overlapsSlot(window: ItemWindow, slotStart: number, slotEnd: number) {
+  return slotStart < window.endMin && slotEnd > window.startMin;
+}
+
+function plural(count: number, singular: string) {
+  return `${count} ${singular}${count === 1 ? "" : "s"}`;
+}
+
+function priorityTone(priority: TemporalItemWithRelations["priority"]) {
+  if (priority === "CRITICAL") return "critical";
+  if (priority === "HIGH") return "high";
+  if (priority === "LOW") return "low";
+  return "medium";
+}
+
+export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
   const [entered, setEntered] = useState(false);
-  const [hoveredCell, setHoveredCell] = useState<CellInfo | null>(null);
+  const [hoveredCell, setHoveredCell] = useState<HeatmapCell | null>(null);
   const [hoveredDay, setHoveredDay] = useState<number | null>(null);
+  const [selectedCell, setSelectedCell] = useState<HeatmapCell | null>(null);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => requestAnimationFrame(() => setEntered(true)));
     return () => cancelAnimationFrame(id);
   }, []);
 
-  const { grid, todayDow } = useMemo(() => {
-    const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-    const today = new Date();
-    const todayDow = (today.getDay() + 6) % 7;
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setSelectedCell(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
-    const grid: number[][] = Array.from({ length: 7 }, (_, di) => {
+  const { grid, todayDow, weekItems, busiestCell } = useMemo(() => {
+    const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+    const todayDow = (new Date().getDay() + 6) % 7;
+    const activeItems = items.filter(item => item.status !== "COMPLETED" && item.status !== "ARCHIVED");
+    const represented = new Map<string, TemporalItemWithRelations>();
+
+    const grid: HeatmapCell[][] = DAYS.map((_, di) => {
       const date = addDays(weekStart, di);
-      const dayItems = items.filter(
-        i => i.status !== "COMPLETED" && isSameDay(new Date(i.dueDate), date)
-      );
+
       return Array.from({ length: SLOT_COUNT }, (_, si) => {
-        const slotHour = SLOT_START_HOUR + Math.floor(si / 2);
-        let count = 0;
-        for (const item of dayItems) {
-          const dt = new Date(item.dueDate);
-          const h = dt.getHours();
-          const m = dt.getMinutes();
-          if (h >= 22) {
-            if (slotHour >= 14 && slotHour <= 17) count += 1;
-          } else {
-            const itemSlot = Math.floor(((h - SLOT_START_HOUR) * 60 + m) / 30);
-            if (Math.abs(itemSlot - si) <= 1) count += 1;
-          }
-        }
-        return Math.min(count, 4);
+        const startMin = si * SLOT_MINUTES;
+        const endMin = startMin + SLOT_MINUTES;
+        const slotItems = activeItems
+          .map(item => getItemWindowForDay(item, date))
+          .filter((entry): entry is ItemWindow => entry !== null && overlapsSlot(entry, startMin, endMin));
+
+        for (const entry of slotItems) represented.set(entry.item.id, entry.item);
+
+        return {
+          di,
+          si,
+          date,
+          startMin,
+          endMin,
+          label: slotLabel(startMin, endMin),
+          items: slotItems,
+          intensity: Math.min(slotItems.length, PALETTE.length - 1),
+        };
       });
     });
 
-    return { grid, todayDow };
+    const busiestCell = grid
+      .flat()
+      .reduce<HeatmapCell | null>((best, cell) => (!best || cell.items.length > best.items.length ? cell : best), null);
+
+    return { grid, todayDow, weekItems: Array.from(represented.values()), busiestCell };
   }, [items]);
 
-  const onCellEnter = useCallback((di: number, si: number, val: number) => {
-    setHoveredCell({ di, si, val });
+  const onCellEnter = useCallback((cell: HeatmapCell) => {
+    setHoveredCell(cell);
     setHoveredDay(null);
   }, []);
 
@@ -71,18 +211,31 @@ export default function HeatmapCard({ items }: { items: TemporalItemWithRelation
     setHoveredCell(null);
   }, []);
 
-  const onLeave = useCallback(() => {
+  const clearGridFocus = useCallback(() => {
     setHoveredCell(null);
     setHoveredDay(null);
   }, []);
 
+  const openSlot = useCallback((cell: HeatmapCell) => {
+    if (cell.items.length === 0) {
+      setSelectedCell(null);
+      return;
+    }
+    setSelectedCell(cell);
+  }, []);
+
   const statusText = hoveredCell
-    ? `${DAYS[hoveredCell.di]}  ·  ${slotLabel(hoveredCell.si)}  ·  ${
-        hoveredCell.val === 0 ? "free" : `${hoveredCell.val} item${hoveredCell.val !== 1 ? "s" : ""}`
+    ? `${format(hoveredCell.date, "EEE, MMM d")}  |  ${hoveredCell.label}  |  ${
+        hoveredCell.items.length === 0 ? "free" : plural(hoveredCell.items.length, "item")
       }`
     : hoveredDay !== null
-    ? `${DAYS[hoveredDay]}  ·  ${grid[hoveredDay].reduce((a, v) => a + (v > 0 ? 1 : 0), 0)} active slots`
-    : null;
+      ? `${format(grid[hoveredDay][0].date, "EEEE, MMM d")}  |  ${plural(
+          new Set(grid[hoveredDay].flatMap(cell => cell.items.map(entry => entry.item.id))).size,
+          "item"
+        )}`
+      : weekItems.length > 0
+        ? `${plural(weekItems.length, "active item")} this week`
+        : "No active scheduled items this week";
 
   return (
     <>
@@ -94,71 +247,105 @@ export default function HeatmapCard({ items }: { items: TemporalItemWithRelation
           padding: 20px 20px 16px;
           box-shadow: var(--shadow-sm);
           transition: box-shadow 0.35s ease;
+          position: relative;
+          overflow: hidden;
         }
         .hm-card:hover { box-shadow: 0 6px 28px rgba(0,0,0,0.08); }
 
         .hm-head {
           display: flex;
           justify-content: space-between;
-          align-items: center;
-          margin-bottom: 14px;
+          align-items: flex-start;
+          gap: 12px;
+          margin-bottom: 12px;
         }
         .hm-title { font-size: 15px; font-weight: 700; color: var(--ink); }
         .hm-title .muted { color: var(--mut); font-weight: 500; font-size: 13px; }
+        .hm-summary {
+          font-size: 11.5px;
+          color: var(--mut);
+          font-weight: 600;
+          white-space: nowrap;
+          padding-top: 2px;
+        }
 
-        .hm-inner {
+        .hm-grid {
           display: grid;
-          grid-template-columns: 32px repeat(28, 1fr);
+          grid-template-columns: 32px repeat(24, minmax(0, 1fr));
           gap: 3px;
           align-items: center;
         }
         .hm-hour-row {
-          grid-column: 1 / span 29;
+          grid-column: 1 / -1;
           display: grid;
-          grid-template-columns: 32px repeat(28, 1fr);
+          grid-template-columns: 32px repeat(24, minmax(0, 1fr));
           gap: 3px;
-          font-size: 10.5px;
+          font-size: 9.5px;
           color: var(--mut-2);
           margin-bottom: 2px;
           user-select: none;
         }
-        .hm-col-label { grid-column: span 4; text-align: left; }
+        .hm-hour {
+          min-width: 0;
+          overflow: visible;
+          white-space: nowrap;
+          text-align: left;
+        }
+        .hm-hour.blank { color: transparent; }
 
         .hm-day-label {
           font-size: 11px;
           color: var(--mut);
-          font-weight: 600;
-          cursor: pointer;
-          transition: color 0.2s ease, transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
+          font-weight: 650;
+          cursor: default;
+          transition: color 0.2s ease, opacity 0.22s ease, transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
           user-select: none;
         }
-        .hm-day-label.today { color: var(--indigo-deep); font-weight: 700; }
-        .hm-day-label.lit   { color: var(--ink); transform: translateX(2px); }
-        .hm-day-label.dim   { opacity: 0.35; }
+        .hm-day-label.today { color: var(--indigo-deep); font-weight: 800; }
+        .hm-day-label.lit { color: var(--ink); transform: translateX(2px); }
+        .hm-day-label.dim { opacity: 0.35; }
 
         .hm-cell {
-          aspect-ratio: 1;
-          border-radius: 3px;
-          min-height: 13px;
-          cursor: pointer;
+          appearance: none;
+          border: 0;
+          padding: 0;
+          width: 100%;
+          aspect-ratio: 1.25;
+          min-height: 10px;
+          border-radius: 4px;
+          cursor: default;
           transition:
-            opacity 0.35s ease,
+            opacity 0.25s ease,
             transform 0.22s cubic-bezier(0.34,1.56,0.64,1),
-            background 0.15s ease;
+            box-shadow 0.2s ease,
+            background 0.16s ease;
           transform-origin: center;
           position: relative;
         }
-        .hm-cell.dim { opacity: 0.25; }
-        .hm-cell.lit { transform: scale(1.45); z-index: 1; }
+        .hm-cell.filled { cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.45); }
+        .hm-cell.filled:hover,
+        .hm-cell.filled:focus-visible {
+          outline: none;
+          transform: scale(1.34);
+          z-index: 2;
+          box-shadow: 0 8px 18px rgba(79,70,229,0.22), inset 0 0 0 1px rgba(255,255,255,0.62);
+        }
+        .hm-cell.selected {
+          transform: scale(1.22);
+          z-index: 2;
+          box-shadow: 0 0 0 2px white, 0 0 0 4px rgba(79,70,229,0.42);
+        }
+        .hm-cell.dim { opacity: 0.22; }
+        .hm-cell.empty:hover { box-shadow: inset 0 0 0 1px #dbe3ef; }
 
         .hm-status {
-          height: 18px;
+          min-height: 18px;
           margin-top: 10px;
           font-size: 11.5px;
           color: var(--indigo);
-          font-weight: 600;
-          transition: opacity 0.2s ease;
+          font-weight: 650;
           letter-spacing: 0.01em;
+          transition: color 0.2s ease;
         }
 
         .hm-legend {
@@ -178,77 +365,198 @@ export default function HeatmapCard({ items }: { items: TemporalItemWithRelation
           transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
         }
         .hm-scale span:hover { transform: scale(1.3); }
+
+        .hm-slot-modal {
+          position: absolute;
+          top: 54px;
+          right: 16px;
+          width: min(320px, calc(100% - 32px));
+          max-height: calc(100% - 76px);
+          overflow: auto;
+          background: rgba(255,255,255,0.96);
+          border: 1px solid rgba(226,232,240,0.95);
+          border-radius: 14px;
+          box-shadow: 0 18px 46px rgba(15,23,42,0.16);
+          padding: 12px;
+          z-index: 8;
+          animation: hm-modal-in 0.22s cubic-bezier(0.34,1.56,0.64,1);
+          backdrop-filter: blur(12px);
+        }
+        @keyframes hm-modal-in {
+          from { opacity: 0; transform: translateY(8px) scale(0.96); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .hm-slot-head {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 10px;
+          margin-bottom: 10px;
+        }
+        .hm-slot-kicker {
+          color: var(--mut);
+          font-size: 11px;
+          font-weight: 650;
+        }
+        .hm-slot-title {
+          color: var(--ink);
+          font-size: 14px;
+          font-weight: 800;
+          margin-top: 2px;
+        }
+        .hm-close {
+          appearance: none;
+          border: 0;
+          background: var(--line-2);
+          color: var(--mut);
+          width: 26px;
+          height: 26px;
+          border-radius: 8px;
+          cursor: pointer;
+          font-weight: 800;
+          line-height: 1;
+          transition: background 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
+        }
+        .hm-close:hover { background: var(--indigo-soft); color: var(--indigo); transform: scale(1.06); }
+        .hm-slot-list { display: flex; flex-direction: column; gap: 8px; }
+        .hm-slot-item {
+          appearance: none;
+          border: 1px solid var(--line);
+          background: white;
+          border-radius: 10px;
+          padding: 9px 10px;
+          text-align: left;
+          cursor: pointer;
+          transition: border-color 0.2s ease, box-shadow 0.22s ease, transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
+        }
+        .hm-slot-item:hover {
+          border-color: rgba(99,102,241,0.38);
+          box-shadow: 0 8px 18px rgba(79,70,229,0.1);
+          transform: translateY(-1px);
+        }
+        .hm-slot-item-title {
+          color: var(--ink);
+          font-size: 13px;
+          font-weight: 750;
+          line-height: 1.25;
+        }
+        .hm-slot-item-meta {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 6px;
+          color: var(--mut);
+          font-size: 11.5px;
+          margin-top: 6px;
+        }
+        .hm-pill {
+          border-radius: 999px;
+          padding: 2px 7px;
+          font-size: 10.5px;
+          font-weight: 800;
+          letter-spacing: 0.02em;
+        }
+        .hm-pill.critical, .hm-pill.high { background: #fee2e2; color: #b91c1c; }
+        .hm-pill.medium { background: #fef3c7; color: #92400e; }
+        .hm-pill.low { background: #dcfce7; color: #166534; }
+
+        @media (max-width: 760px) {
+          .hm-card { padding: 18px 16px 15px; }
+          .hm-head { flex-direction: column; align-items: flex-start; gap: 4px; }
+          .hm-summary { white-space: normal; }
+          .hm-grid, .hm-hour-row { grid-template-columns: 30px repeat(24, minmax(8px, 1fr)); gap: 2px; }
+          .hm-hour { font-size: 8.5px; }
+          .hm-cell { min-height: 9px; border-radius: 3px; }
+        }
       `}</style>
 
-      <div className="hm-card" onMouseLeave={onLeave}>
+      <div className="hm-card">
         <div className="hm-head">
           <div className="hm-title">
             Schedule Heatmap <span className="muted">(This Week)</span>
           </div>
+          <div className="hm-summary">
+            {busiestCell && busiestCell.items.length > 0
+              ? `Peak: ${plural(busiestCell.items.length, "item")} ${format(busiestCell.date, "EEE")} ${busiestCell.label}`
+              : "No active load"}
+          </div>
         </div>
 
-        <div className="hm-inner">
-          {/* Hour header */}
+        <div className="hm-grid" onMouseLeave={clearGridFocus}>
           <div className="hm-hour-row">
             <span />
-            {HOUR_LABELS.map(h => (
-              <span key={h} className="hm-col-label">{h}</span>
-            ))}
-            <span className="hm-col-label" />
+            {Array.from({ length: SLOT_COUNT }, (_, si) => {
+              const showLabel = si % 3 === 0;
+              return (
+                <span key={si} className={`hm-hour${showLabel ? "" : " blank"}`}>
+                  {showLabel ? hourLabel(si * SLOT_MINUTES) : "."}
+                </span>
+              );
+            })}
           </div>
 
-          {/* Day rows */}
           {DAYS.map((day, di) => {
             const isRowHovered = hoveredDay === di;
-            const isRowDimmed  = hoveredDay !== null && hoveredDay !== di;
+            const isRowDimmed = hoveredDay !== null && hoveredDay !== di;
 
             return (
               <React.Fragment key={di}>
                 <span
                   className={[
                     "hm-day-label",
-                    di === todayDow  ? "today" : "",
-                    isRowHovered     ? "lit"   : "",
-                    isRowDimmed      ? "dim"   : "",
+                    di === todayDow ? "today" : "",
+                    isRowHovered ? "lit" : "",
+                    isRowDimmed ? "dim" : "",
                   ].join(" ").trim()}
                   onMouseEnter={() => onDayEnter(di)}
                 >
                   {day}
                 </span>
 
-                {grid[di].map((val, si) => {
-                  const isThisCell = hoveredCell?.di === di && hoveredCell?.si === si;
+                {grid[di].map(cell => {
+                  const isThisCell = hoveredCell?.di === cell.di && hoveredCell?.si === cell.si;
+                  const isSelected = selectedCell?.di === cell.di && selectedCell?.si === cell.si;
                   const isCellDimmed =
                     (hoveredCell !== null && !isThisCell) ||
                     isRowDimmed;
-                  const isCellLit = isThisCell;
+                  const filled = cell.items.length > 0;
 
                   return (
-                    <span
-                      key={si}
+                    <button
+                      key={cell.si}
+                      type="button"
                       className={[
                         "hm-cell",
+                        filled ? "filled" : "empty",
                         isCellDimmed ? "dim" : "",
-                        isCellLit    ? "lit" : "",
+                        isSelected ? "selected" : "",
                       ].join(" ").trim()}
                       style={{
-                        background: PALETTE[val],
+                        background: PALETTE[cell.intensity],
                         opacity: entered ? undefined : 0,
                         transform: entered
-                          ? (isCellLit ? "scale(1.45)" : "scale(1)")
-                          : "scale(0.4)",
+                          ? isThisCell && filled
+                            ? "scale(1.34)"
+                            : isSelected
+                            ? "scale(1.22)"
+                            : "scale(1)"
+                          : "scale(0.45)",
                         transition: [
-                          `opacity ${entered ? "0.15s" : `0.4s ease ${di * 0.055}s`}`,
-                          `transform ${isCellLit
+                          `opacity ${entered ? "0.15s" : `0.4s ease ${di * 0.045 + cell.si * 0.004}s`}`,
+                          `transform ${entered
                             ? "0.22s cubic-bezier(0.34,1.56,0.64,1)"
-                            : entered
-                              ? "0.22s cubic-bezier(0.34,1.56,0.64,1)"
-                              : `0.4s cubic-bezier(0.34,1.56,0.64,1) ${di * 0.055}s`
+                            : `0.4s cubic-bezier(0.34,1.56,0.64,1) ${di * 0.045 + cell.si * 0.004}s`
                           }`,
-                          "background 0.15s ease",
+                          "box-shadow 0.2s ease",
+                          "background 0.16s ease",
                         ].join(", "),
                       }}
-                      onMouseEnter={() => onCellEnter(di, si, val)}
+                      aria-label={`${format(cell.date, "EEEE, MMM d")}, ${cell.label}, ${
+                        filled ? plural(cell.items.length, "item") : "free"
+                      }`}
+                      onMouseEnter={() => onCellEnter(cell)}
+                      onFocus={() => onCellEnter(cell)}
+                      onClick={() => openSlot(cell)}
                     />
                   );
                 })}
@@ -257,20 +565,51 @@ export default function HeatmapCard({ items }: { items: TemporalItemWithRelation
           })}
         </div>
 
-        {/* Status bar */}
-        <div className="hm-status" style={{ opacity: statusText ? 1 : 0 }}>
-          {statusText ?? ""}
-        </div>
+        <div className="hm-status">{statusText}</div>
 
         <div className="hm-legend">
           <span>Free</span>
           <div className="hm-scale">
-            {PALETTE.map((c, i) => (
-              <span key={i} style={{ background: c }} />
+            {PALETTE.map((color, index) => (
+              <span key={index} style={{ background: color }} />
             ))}
           </div>
           <span>Busy</span>
         </div>
+
+        {selectedCell && selectedCell.items.length > 0 && (
+          <div className="hm-slot-modal" role="dialog" aria-label="Scheduled items in selected time slot">
+            <div className="hm-slot-head">
+              <div>
+                <div className="hm-slot-kicker">{format(selectedCell.date, "EEEE, MMM d")}</div>
+                <div className="hm-slot-title">
+                  {selectedCell.label} | {plural(selectedCell.items.length, "item")}
+                </div>
+              </div>
+              <button type="button" className="hm-close" aria-label="Close slot details" onClick={() => setSelectedCell(null)}>
+                x
+              </button>
+            </div>
+
+            <div className="hm-slot-list">
+              {selectedCell.items.map(entry => (
+                <button
+                  key={entry.item.id}
+                  type="button"
+                  className="hm-slot-item"
+                  onClick={() => onEdit?.(entry.item)}
+                >
+                  <div className="hm-slot-item-title">{entry.item.title}</div>
+                  <div className="hm-slot-item-meta">
+                    <span>{entry.item.type}</span>
+                    <span>{formatItemTime(entry.item, entry)}</span>
+                    <span className={`hm-pill ${priorityTone(entry.item.priority)}`}>{entry.item.priority}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isSameDay, addMonths, subMonths, isWithinInterval } from "date-fns";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isSameDay, addMonths, subMonths } from "date-fns";
 import { ChevronLeft, ChevronRight, Clock, Calendar, CheckSquare, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { interpretTimeLeft, urgencyColor, urgencyBadgeColor } from "@/lib/time";
+import { interpretTimeLeft, urgencyBadgeColor } from "@/lib/time";
 import type { TemporalItemWithRelations } from "@/types";
 
 interface TimelineViewProps {
@@ -37,7 +37,7 @@ export default function TimelineView({ initialItems }: TimelineViewProps) {
 
   const itemsByDay = useMemo(() => {
     const map = new Map<string, TemporalItemWithRelations[]>();
-    for (const item of initialItems) {
+    for (const item of initialItems.filter(i => i.status !== "ARCHIVED")) {
       const key = format(new Date(item.dueDate), "yyyy-MM-dd");
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(item);
@@ -54,7 +54,7 @@ export default function TimelineView({ initialItems }: TimelineViewProps) {
   // Upcoming items sorted by dueDate
   const upcomingItems = useMemo(() => {
     return [...initialItems]
-      .filter((i) => i.status !== "COMPLETED")
+      .filter((i) => i.status !== "COMPLETED" && i.status !== "ARCHIVED")
       .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
       .slice(0, 20);
   }, [initialItems]);
@@ -133,9 +133,7 @@ export default function TimelineView({ initialItems }: TimelineViewProps) {
                     )}
                   </div>
                   <div className="space-y-0.5">
-                    {dayItems.slice(0, 3).map((item) => {
-                      const tl = interpretTimeLeft(new Date(item.dueDate));
-                      return (
+                    {dayItems.slice(0, 3).map((item) => (
                         <div
                           key={item.id}
                           className={cn(
@@ -146,8 +144,7 @@ export default function TimelineView({ initialItems }: TimelineViewProps) {
                         >
                           {item.title}
                         </div>
-                      );
-                    })}
+                    ))}
                   </div>
                 </div>
               );
@@ -162,6 +159,7 @@ export default function TimelineView({ initialItems }: TimelineViewProps) {
             return (
               <div key={type} className="flex items-center gap-1.5">
                 <div className={cn("w-3 h-3 rounded-sm", color)} />
+                <Icon className="w-3 h-3 text-slate-500" />
                 <span className="text-xs text-slate-500">{type}</span>
               </div>
             );
