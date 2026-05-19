@@ -20,11 +20,10 @@ type TimelineRow = {
 
 type TimelineTone = "red" | "orange" | "blue" | "purple";
 
-const AXIS_OFFSETS = [0, 2, 4, 6, 8, 10];
-const SPAN_DAYS = 10;
+const SPAN_DAYS = 7;
 const MAX_ROWS = 5;
-const DEFAULT_BAR_DAYS = 3;
-const MIN_BAR_WIDTH = 42;
+const DEFAULT_BAR_DAYS = 2;
+const MIN_BAR_WIDTH_PCT = 5;
 const FOCUSED_TYPES = new Set(["DEADLINE", "TASK"]);
 const PRIORITY_RANK: Record<TemporalItemWithRelations["priority"], number> = {
   CRITICAL: 0,
@@ -35,21 +34,6 @@ const PRIORITY_RANK: Record<TemporalItemWithRelations["priority"], number> = {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
-}
-
-function readableBar(left: number, width: number): { left: number; width: number } {
-  if (width >= MIN_BAR_WIDTH) {
-    return { left, width };
-  }
-
-  const targetWidth = Math.min(MIN_BAR_WIDTH, 100);
-  const shiftLeft = Math.min(left, targetWidth - width);
-  const adjustedLeft = Math.max(0, left - shiftLeft);
-
-  return {
-    left: adjustedLeft,
-    width: Math.min(targetWidth, 100 - adjustedLeft),
-  };
 }
 
 function itemTone(item: TemporalItemWithRelations): TimelineTone {
@@ -64,7 +48,6 @@ function itemTone(item: TemporalItemWithRelations): TimelineTone {
 
 function rowRank(item: TemporalItemWithRelations): number {
   const tone = itemTone(item);
-
   if (tone === "red") return 0;
   if (tone === "orange") return 1;
   if (tone === "blue") return 2;
@@ -73,7 +56,6 @@ function rowRank(item: TemporalItemWithRelations): number {
 
 function getDueDate(item: TemporalItemWithRelations): Date | null {
   const due = startOfDay(new Date(item.dueDate));
-
   return isValid(due) ? due : null;
 }
 
@@ -116,25 +98,28 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
       const start = item.startDate ? startOfDay(new Date(item.startDate)) : null;
       const hasValidStart = start !== null && isValid(start);
       const rawStartOffset = hasValidStart
-        ? differenceInCalendarDays(start, today)
-        : dueOffset - DEFAULT_BAR_DAYS;
-      const startOffset = clamp(Math.min(rawStartOffset, dueOffset), 0, SPAN_DAYS);
-      const endOffset = Math.max(dueOffset, startOffset + 0.8);
-      const left = (startOffset / SPAN_DAYS) * 100;
-      const width = ((Math.min(endOffset, SPAN_DAYS) - startOffset) / SPAN_DAYS) * 100;
-      const readable = readableBar(left, width);
+        ? clamp(differenceInCalendarDays(start, today), 0, SPAN_DAYS)
+        : Math.max(0, dueOffset - DEFAULT_BAR_DAYS);
+      const startOffset = Math.max(0, Math.min(rawStartOffset, dueOffset));
+      // Bar spans the full column width for each day: from startOffset grid line to dueOffset+1 grid line
+      const daySpan = (dueOffset + 1) - startOffset; // number of day-columns the bar occupies
+      const colWidth = 100 / (SPAN_DAYS + 1); // percent per column
+      const left = startOffset * colWidth;
+      const width = daySpan * colWidth;
 
       return {
         id: item.id,
         title: item.title,
-        endLabel: format(due, "MMM d"),
-        left: Number(readable.left.toFixed(2)),
-        width: Number(readable.width.toFixed(2)),
+        endLabel: hasValidStart ? `${format(start!, "MMM d")}–${format(due, "MMM d")}` : format(due, "MMM d"),
+        left: Number(left.toFixed(2)),
+        width: Number(width.toFixed(2)),
         tone: itemTone(item),
       };
     });
 
-    const axisLabels = AXIS_OFFSETS.map(offset => format(addDays(today, offset), "MMM d"));
+    const axisLabels = Array.from({ length: SPAN_DAYS + 1 }, (_, i) =>
+      format(addDays(today, i), i === 0 ? "MMM d" : "d")
+    );
 
     return { rows, axisLabels, itemMap };
   }, [items]);
@@ -142,16 +127,10 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
   const activeTone = hoveredTone ?? rows.find(row => row.id === hoveredRow)?.tone ?? null;
 
   useEffect(() => {
-    let secondFrame = 0;
-
     const firstFrame = requestAnimationFrame(() => {
-      secondFrame = requestAnimationFrame(() => setEntered(true));
+      requestAnimationFrame(() => setEntered(true));
     });
-
-    return () => {
-      cancelAnimationFrame(firstFrame);
-      cancelAnimationFrame(secondFrame);
-    };
+    return () => cancelAnimationFrame(firstFrame);
   }, []);
 
   const legendItems = [
@@ -173,9 +152,7 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
           transition: box-shadow 0.35s ease;
           overflow: hidden;
         }
-        .tl-card:hover {
-          box-shadow: 0 6px 28px rgba(0,0,0,0.08);
-        }
+        .tl-card:hover { box-shadow: 0 6px 28px rgba(0,0,0,0.08); }
         .tl-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .tl-title { font-size: 15px; font-weight: 700; color: var(--ink); }
         .tl-wrap {
@@ -186,23 +163,23 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
         }
         .tl-axis {
           display: grid;
-          grid-template-columns: repeat(6, 1fr);
+          grid-template-columns: repeat(var(--tl-cols, 8), 1fr);
           margin-left: var(--timeline-pad-left);
           margin-right: var(--timeline-pad-right);
           padding-bottom: 8px;
           color: var(--mut);
-          font-size: 11px;
+          font-size: 10.5px;
           font-weight: 650;
           border-bottom: 1px dashed var(--line);
+          text-align: center;
         }
         .tl-axis span {
-          text-align: left;
           opacity: 0;
           transform: translateY(4px);
         }
         .tl-card[data-entered="true"] .tl-axis span {
           animation: tl-axis-in 0.32s ease both;
-          animation-delay: calc(var(--tl-index) * 45ms);
+          animation-delay: calc(var(--tl-index) * 35ms);
         }
         .tl-body {
           position: relative;
@@ -214,14 +191,14 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
           position: absolute;
           inset: 0 0 24px;
           display: grid;
-          grid-template-columns: repeat(6, 1fr);
+          grid-template-columns: repeat(var(--tl-cols, 8), 1fr);
           pointer-events: none;
         }
         .tl-grid-lines i { border-left: 1px dashed rgba(148, 163, 184, 0.2); }
         .tl-grid-lines i:first-child { border-left: 0; }
         .tl-card[data-entered="true"] .tl-grid-lines i {
           animation: tl-grid-in 0.38s ease both;
-          animation-delay: calc(80ms + var(--tl-index) * 55ms);
+          animation-delay: calc(80ms + var(--tl-index) * 50ms);
         }
         .tl-row {
           position: relative;
@@ -250,11 +227,7 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
           opacity: var(--tl-opacity, 1);
           clip-path: inset(0 0 0 0 round 8px);
           cursor: pointer;
-          transition:
-            transform 0.28s cubic-bezier(0.34,1.56,0.64,1),
-            filter 0.18s ease,
-            opacity 0.2s ease,
-            box-shadow 0.18s ease;
+          transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1), filter 0.18s ease, opacity 0.2s ease, box-shadow 0.18s ease;
         }
         .tl-card[data-entered="false"] .tl-pill {
           opacity: 0;
@@ -273,13 +246,8 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
           outline: 2px solid color-mix(in srgb, var(--bar-ink) 55%, white);
           outline-offset: 2px;
         }
-        .tl-pill:disabled {
-          cursor: default;
-        }
-        .tl-pill:disabled:hover {
-          filter: none;
-          transform: none;
-        }
+        .tl-pill:disabled { cursor: default; }
+        .tl-pill:disabled:hover { filter: none; transform: none; }
         .tl-pill .end { font-size: 10.5px; opacity: .85; font-weight: 700; white-space: nowrap; }
         .tl-pill .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .tl-pill[data-tone="red"] {
@@ -320,7 +288,7 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
         }
         .today-tag {
           position: absolute;
-          left: 0;
+          left: calc((100% / var(--tl-cols, 8)) / 2);
           bottom: 1px;
           transform: translateX(-50%);
           background: var(--red);
@@ -358,10 +326,7 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
           opacity: var(--tl-opacity, 1);
           transform: var(--tl-legend-shift, translateX(0));
           background: var(--tl-legend-bg, transparent);
-          transition:
-            background 0.2s ease,
-            transform 0.28s cubic-bezier(0.34,1.56,0.64,1),
-            opacity 0.2s ease;
+          transition: background 0.2s ease, transform 0.28s cubic-bezier(0.34,1.56,0.64,1), opacity 0.2s ease;
         }
         .tl-ld .sw {
           width: 9px;
@@ -369,9 +334,7 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
           border-radius: 50%;
           transform: var(--tl-dot-scale, scale(1));
           box-shadow: var(--tl-dot-shadow, none);
-          transition:
-            transform 0.28s cubic-bezier(0.34,1.56,0.64,1),
-            box-shadow 0.2s ease;
+          transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s ease;
         }
         .tl-empty {
           text-align: center;
@@ -402,22 +365,14 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
           to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
         }
         @media (prefers-reduced-motion: reduce) {
-          .tl-card,
-          .tl-axis span,
-          .tl-grid-lines i,
-          .tl-pill,
-          .today-line,
-          .today-tag,
-          .tl-ld,
-          .tl-ld .sw {
+          .tl-card, .tl-axis span, .tl-grid-lines i, .tl-pill, .today-line, .today-tag, .tl-ld, .tl-ld .sw {
             animation: none !important;
             transition: none !important;
           }
           .tl-card[data-entered="false"] .tl-pill,
           .tl-card[data-entered="false"] .tl-axis span,
           .tl-card[data-entered="true"] .tl-axis span,
-          .today-line,
-          .today-tag {
+          .today-line, .today-tag {
             opacity: 1;
             transform: none;
             clip-path: none;
@@ -433,7 +388,7 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
           <div className="tl-empty">No upcoming deadlines to display</div>
         ) : (
           <div className="tl-wrap">
-            <div className="tl-axis">
+            <div className="tl-axis" style={{ "--tl-cols": SPAN_DAYS + 1 } as CSSProperties}>
               {axisLabels.map((l, i) => (
                 <span key={i} style={{ "--tl-index": i } as CSSProperties}>{l}</span>
               ))}
@@ -441,9 +396,9 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
 
             <div className="today-line" aria-hidden="true" />
             <div className="tl-body">
-              <div className="tl-grid-lines" aria-hidden="true">
-                {axisLabels.map((label, i) => (
-                  <i key={label} style={{ "--tl-index": i } as CSSProperties} />
+              <div className="tl-grid-lines" aria-hidden="true" style={{ "--tl-cols": SPAN_DAYS + 1 } as CSSProperties}>
+                {axisLabels.map((_, i) => (
+                  <i key={i} style={{ "--tl-index": i } as CSSProperties} />
                 ))}
               </div>
               {rows.map((row, i) => {
