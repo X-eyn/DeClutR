@@ -112,7 +112,7 @@ export default function StatCards({ items, onEdit, onComplete, onDelete }: StatC
       <style>{`
         .stat-row {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
           gap: 10px;
           height: 100%;
           align-items: stretch;
@@ -146,7 +146,7 @@ export default function StatCards({ items, onEdit, onComplete, onDelete }: StatC
         /* ── Header ── */
         .stat-header {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           gap: 10px;
           flex-shrink: 0;
           min-width: 0;
@@ -164,18 +164,26 @@ export default function StatCards({ items, onEdit, onComplete, onDelete }: StatC
         .stat-headtxt {
           display: flex;
           flex-direction: column;
-          gap: 1px;
+          gap: 4px;
           min-width: 0;
           flex: 1;
           overflow: hidden;
         }
+        .stat-title-row {
+          display: flex;
+          align-items: flex-start;
+          gap: 6px 8px;
+          flex-wrap: wrap;
+          min-width: 0;
+        }
         .stat-label {
-          font-size: 11px;
-          color: var(--mut);
-          font-weight: 500;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          font-size: 12px;
+          color: var(--ink-2);
+          font-weight: 650;
+          line-height: 1.25;
+          white-space: normal;
+          overflow: visible;
+          text-overflow: clip;
         }
         .stat-value {
           font-size: 20px;
@@ -184,8 +192,8 @@ export default function StatCards({ items, onEdit, onComplete, onDelete }: StatC
           line-height: 1.15;
           color: var(--ink);
           white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          overflow: visible;
+          text-overflow: clip;
           transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1), color 0.2s ease;
         }
         .stat:hover .stat-value {
@@ -223,10 +231,12 @@ export default function StatCards({ items, onEdit, onComplete, onDelete }: StatC
         /* mini text */
         .stat-meta {
           font-size: 11.5px;
-          color: var(--mut);
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          color: var(--ink-2);
+          font-weight: 600;
+          line-height: 1.35;
+          white-space: normal;
+          overflow: visible;
+          text-overflow: clip;
         }
         .stat-link {
           color: var(--indigo);
@@ -256,6 +266,7 @@ export default function StatCards({ items, onEdit, onComplete, onDelete }: StatC
           flex-shrink: 0;
           white-space: nowrap;
           cursor: pointer;
+          max-width: 100%;
           transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1), opacity 0.2s ease, box-shadow 0.2s ease;
         }
         .stat-pill:hover {
@@ -371,22 +382,24 @@ export default function StatCards({ items, onEdit, onComplete, onDelete }: StatC
               </svg>
             </div>
             <div className="stat-headtxt">
-              <div className="stat-label">Critical Deadline</div>
+              <div className="stat-title-row">
+                <div className="stat-label">Critical Deadline</div>
+                {overdueCount > 0 && (
+                  <span
+                    className="stat-pill"
+                    style={{ background: "var(--red-tint)", color: "var(--red)" }}
+                    onClick={e => { e.stopPropagation(); openModal("Overdue Items", overdueItems); }}
+                  >
+                    {overdueCount} overdue
+                  </span>
+                )}
+              </div>
               {nextCritical ? (
                 <div className="stat-value">{hoursLeft}h <span style={{ fontSize: 15 }}>{minsRemainder}m</span></div>
               ) : (
                 <div className="stat-value" style={{ fontSize: 15 }}>All clear</div>
               )}
             </div>
-            {overdueCount > 0 && (
-              <span
-                className="stat-pill"
-                style={{ background: "var(--red-tint)", color: "var(--red)" }}
-                onClick={e => { e.stopPropagation(); openModal("Overdue Items", overdueItems); }}
-              >
-                {overdueCount} overdue
-              </span>
-            )}
           </div>
 
           <div className="stat-sep" />

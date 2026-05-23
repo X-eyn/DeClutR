@@ -5,7 +5,7 @@ import { addDays, format, isSameDay, startOfDay, startOfWeek } from "date-fns";
 import type { TemporalItemWithRelations } from "@/types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const PALETTE = ["#f8fafc", "#e0e7ff", "#a5b4fc", "#6366f1", "#312e81"];
+const PALETTE = ["#f4f7fb", "#dce6ff", "#a5b4fc", "#6366f1", "#312e81"];
 const SLOT_COUNT = 24;
 const SLOT_MINUTES = 60;
 const DAY_MINUTES = 24 * 60;
@@ -334,7 +334,7 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
         }
         .hm-time-block-seg {
           border-radius: 4px;
-          opacity: 0.35;
+          opacity: 0.38;
         }
         .hm-grid-wrap {
           position: relative;
@@ -369,8 +369,31 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
             background 0.16s ease;
           transform-origin: center;
           position: relative;
+          background-clip: padding-box;
+          isolation: isolate;
         }
-        .hm-cell.filled { cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.45); }
+        .hm-cell::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.88);
+          opacity: 0.95;
+          pointer-events: none;
+        }
+        .hm-cell.empty::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          background: linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0.06));
+          opacity: 0.92;
+          pointer-events: none;
+        }
+        .hm-cell.filled {
+          cursor: pointer;
+          box-shadow: 0 1px 4px rgba(99,102,241,0.1);
+        }
         .hm-cell.filled:hover,
         .hm-cell.filled:focus-visible {
           outline: none;
@@ -384,7 +407,9 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
           box-shadow: 0 0 0 2px white, 0 0 0 4px rgba(79,70,229,0.42);
         }
         .hm-cell.dim { opacity: 0.22; }
-        .hm-cell.empty:hover { box-shadow: inset 0 0 0 1px #dbe3ef; }
+        .hm-cell.empty:hover {
+          box-shadow: 0 0 0 1px rgba(203,213,225,0.24);
+        }
 
         .hm-status {
           min-height: 18px;
@@ -415,12 +440,16 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
           border-radius: 3px;
           display: block;
           cursor: pointer;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.75);
           transition: transform 0.22s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s ease, opacity 0.2s ease;
         }
         .hm-scale-item:hover { transform: scale(1.35); box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
         .hm-scale-item.active {
-          transform: scale(1.3);
-          box-shadow: 0 0 0 2px white, 0 0 0 4px rgba(79,70,229,0.5);
+          transform: translateY(-1px) scale(1.18);
+          box-shadow:
+            0 0 0 1px rgba(148,163,184,0.32),
+            0 6px 14px rgba(79,70,229,0.14),
+            inset 0 1px 0 rgba(255,255,255,0.8);
           border-radius: 3px;
         }
         .hm-scale-item.dim { opacity: 0.3; }
