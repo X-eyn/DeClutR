@@ -13,18 +13,26 @@ type TimelineRow = {
   id: string;
   title: string;
   endLabel: string;
+  fullLabel: string;
   left: number;
   width: number;
+  compact: boolean;
   tone: TimelineTone;
 };
 
-type TimelineTone = "red" | "orange" | "blue" | "purple";
+type TimelineTone = "critical" | "high" | "medium" | "low";
 
 const SPAN_DAYS = 7;
 const MAX_ROWS = 5;
 const DEFAULT_BAR_DAYS = 2;
 const MIN_BAR_WIDTH_PCT = 5;
 const FOCUSED_TYPES = new Set(["DEADLINE", "TASK"]);
+const PRIORITY_META: Record<TimelineTone, { color: string; light: string; label: string; rank: number }> = {
+  critical: { color: "#ef4444", light: "#fff1f2", label: "Critical", rank: 0 },
+  high: { color: "#f97316", light: "#fff7ed", label: "High", rank: 1 },
+  medium: { color: "#3b82f6", light: "#eff6ff", label: "Medium", rank: 2 },
+  low: { color: "#8b5cf6", light: "#f5f3ff", label: "Low", rank: 3 },
+};
 const PRIORITY_RANK: Record<TemporalItemWithRelations["priority"], number> = {
   CRITICAL: 0,
   HIGH: 1,
@@ -37,21 +45,14 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function itemTone(item: TemporalItemWithRelations): TimelineTone {
-  const hasPersonalTag = item.tags.some(tag => /personal|home|life/i.test(tag.name));
-
-  if (hasPersonalTag) return "purple";
-  if (item.priority === "CRITICAL" || item.priority === "HIGH") return "red";
-  if (item.priority === "LOW") return "blue";
-  if (item.priority === "MEDIUM") return "orange";
-  return "purple";
+  if (item.priority === "CRITICAL") return "critical";
+  if (item.priority === "HIGH") return "high";
+  if (item.priority === "MEDIUM") return "medium";
+  return "low";
 }
 
 function rowRank(item: TemporalItemWithRelations): number {
-  const tone = itemTone(item);
-  if (tone === "red") return 0;
-  if (tone === "orange") return 1;
-  if (tone === "blue") return 2;
-  return 3;
+  return PRIORITY_META[itemTone(item)].rank;
 }
 
 function getDueDate(item: TemporalItemWithRelations): Date | null {
@@ -62,6 +63,7 @@ function getDueDate(item: TemporalItemWithRelations): Date | null {
 export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredTone, setHoveredTone] = useState<TimelineTone | null>(null);
+  const [priorityFilter, setPriorityFilter] = useState<TimelineTone | null>(null);
   const [entered, setEntered] = useState(false);
 
   const { rows, axisLabels, itemMap } = useMemo(() => {
@@ -78,7 +80,11 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
       );
 
     const focused = activeUpcoming.filter(entry => FOCUSED_TYPES.has(entry.item.type));
-    const upcoming = (focused.length > 0 ? focused : activeUpcoming)
+    const scopedItems = focused.length > 0 ? focused : activeUpcoming;
+    const filteredItems = priorityFilter
+      ? scopedItems.filter(entry => itemTone(entry.item) === priorityFilter)
+      : scopedItems;
+    const upcoming = filteredItems
       .sort((a, b) =>
         a.due.getTime() - b.due.getTime() ||
         PRIORITY_RANK[a.item.priority] - PRIORITY_RANK[b.item.priority] ||
@@ -101,18 +107,21 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
         ? clamp(differenceInCalendarDays(start, today), 0, SPAN_DAYS)
         : Math.max(0, dueOffset - DEFAULT_BAR_DAYS);
       const startOffset = Math.max(0, Math.min(rawStartOffset, dueOffset));
-      // Bar spans the full column width for each day: from startOffset grid line to dueOffset+1 grid line
-      const daySpan = (dueOffset + 1) - startOffset; // number of day-columns the bar occupies
-      const colWidth = 100 / (SPAN_DAYS + 1); // percent per column
+      const daySpan = (dueOffset + 1) - startOffset;
+      const colWidth = 100 / (SPAN_DAYS + 1);
       const left = startOffset * colWidth;
-      const width = daySpan * colWidth;
+      const width = Math.max(daySpan * colWidth, MIN_BAR_WIDTH_PCT);
+      const dueLabel = format(due, "MMM d");
+      const fullLabel = hasValidStart ? `${format(start!, "MMM d")}-${dueLabel}` : dueLabel;
 
       return {
         id: item.id,
         title: item.title,
-        endLabel: hasValidStart ? `${format(start!, "MMM d")}–${format(due, "MMM d")}` : format(due, "MMM d"),
+        endLabel: dueLabel,
+        fullLabel,
         left: Number(left.toFixed(2)),
         width: Number(width.toFixed(2)),
+        compact: daySpan <= 2,
         tone: itemTone(item),
       };
     });
@@ -122,9 +131,9 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
     );
 
     return { rows, axisLabels, itemMap };
-  }, [items]);
+  }, [items, priorityFilter]);
 
-  const activeTone = hoveredTone ?? rows.find(row => row.id === hoveredRow)?.tone ?? null;
+  const activeTone = priorityFilter ?? hoveredTone ?? rows.find(row => row.id === hoveredRow)?.tone ?? null;
 
   useEffect(() => {
     const firstFrame = requestAnimationFrame(() => {
@@ -133,12 +142,9 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
     return () => cancelAnimationFrame(firstFrame);
   }, []);
 
-  const legendItems = [
-    { tone: "red" as const, color: "#ef4444", light: "#fff1f2", label: "High Priority" },
-    { tone: "orange" as const, color: "#f59e0b", light: "#fff7ed", label: "Medium Priority" },
-    { tone: "blue" as const, color: "#3b82f6", light: "#eff6ff", label: "Low Priority" },
-    { tone: "purple" as const, color: "#8b5cf6", light: "#f5f3ff", label: "Personal" },
-  ];
+  const legendItems = (Object.entries(PRIORITY_META) as Array<[TimelineTone, typeof PRIORITY_META[TimelineTone]]>).map(
+    ([tone, meta]) => ({ tone, ...meta })
+  );
 
   return (
     <>
@@ -151,6 +157,7 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
           box-shadow: var(--shadow-sm);
           transition: box-shadow 0.35s ease;
           overflow: hidden;
+          align-self: start;
         }
         .tl-card:hover { box-shadow: 0 6px 28px rgba(0,0,0,0.08); }
         .tl-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
@@ -229,6 +236,11 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
           cursor: pointer;
           transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1), filter 0.18s ease, opacity 0.2s ease, box-shadow 0.18s ease;
         }
+        .tl-pill[data-compact="true"] {
+          justify-content: flex-start;
+          gap: 0;
+          padding: 0 10px;
+        }
         .tl-card[data-entered="false"] .tl-pill {
           opacity: 0;
           clip-path: inset(0 100% 0 0 round 8px);
@@ -248,24 +260,36 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
         }
         .tl-pill:disabled { cursor: default; }
         .tl-pill:disabled:hover { filter: none; transform: none; }
-        .tl-pill .end { font-size: 10.5px; opacity: .85; font-weight: 700; white-space: nowrap; }
-        .tl-pill .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .tl-pill[data-tone="red"] {
+        .tl-pill .end {
+          flex-shrink: 0;
+          font-size: 10.5px;
+          opacity: .85;
+          font-weight: 700;
+          white-space: nowrap;
+        }
+        .tl-pill .name {
+          flex: 1 1 auto;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .tl-pill[data-tone="critical"] {
           --bar-bg: #fee2e2;
           --bar-ink: #991b1b;
           --bar-border: rgba(239, 68, 68, 0.22);
         }
-        .tl-pill[data-tone="orange"] {
+        .tl-pill[data-tone="high"] {
           --bar-bg: #ffedd5;
           --bar-ink: #9a3412;
-          --bar-border: rgba(245, 158, 11, 0.24);
+          --bar-border: rgba(249, 115, 22, 0.24);
         }
-        .tl-pill[data-tone="blue"] {
+        .tl-pill[data-tone="medium"] {
           --bar-bg: #dbeafe;
           --bar-ink: #1d4ed8;
           --bar-border: rgba(59, 130, 246, 0.22);
         }
-        .tl-pill[data-tone="purple"] {
+        .tl-pill[data-tone="low"] {
           --bar-bg: #ede9fe;
           --bar-ink: #6d28d9;
           --bar-border: rgba(139, 92, 246, 0.24);
@@ -288,7 +312,7 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
         }
         .today-tag {
           position: absolute;
-          left: calc((100% / var(--tl-cols, 8)) / 2);
+          left: 0;
           bottom: 1px;
           transform: translateX(-50%);
           background: var(--red);
@@ -315,6 +339,8 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
           flex-wrap: wrap;
         }
         .tl-ld {
+          appearance: none;
+          border: 0;
           display: flex;
           align-items: center;
           gap: 7px;
@@ -326,6 +352,8 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
           opacity: var(--tl-opacity, 1);
           transform: var(--tl-legend-shift, translateX(0));
           background: var(--tl-legend-bg, transparent);
+          color: inherit;
+          font: inherit;
           transition: background 0.2s ease, transform 0.28s cubic-bezier(0.34,1.56,0.64,1), opacity 0.2s ease;
         }
         .tl-ld .sw {
@@ -385,7 +413,9 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
         </div>
 
         {rows.length === 0 ? (
-          <div className="tl-empty">No upcoming deadlines to display</div>
+          <div className="tl-empty">
+            {priorityFilter ? `No ${PRIORITY_META[priorityFilter].label.toLowerCase()} priority items to display` : "No upcoming deadlines to display"}
+          </div>
         ) : (
           <div className="tl-wrap">
             <div className="tl-axis" style={{ "--tl-cols": SPAN_DAYS + 1 } as CSSProperties}>
@@ -402,8 +432,14 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
                 ))}
               </div>
               {rows.map((row, i) => {
-                const isActive = hoveredRow === row.id || (hoveredTone !== null && hoveredTone === row.tone);
-                const isDimmed = (hoveredRow !== null && hoveredRow !== row.id) || (hoveredTone !== null && hoveredTone !== row.tone);
+                const isTonePreviewing = priorityFilter === null && hoveredTone !== null;
+                const isActive =
+                  hoveredRow === row.id ||
+                  (isTonePreviewing && hoveredTone === row.tone) ||
+                  (priorityFilter !== null && row.tone === priorityFilter);
+                const isDimmed =
+                  (hoveredRow !== null && hoveredRow !== row.id) ||
+                  (isTonePreviewing && hoveredTone !== row.tone);
                 const pillStyle = {
                   left: `${row.left}%`,
                   width: `${row.width}%`,
@@ -418,6 +454,7 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
                       className="tl-pill"
                       data-tone={row.tone}
                       data-active={isActive}
+                      data-compact={row.compact}
                       style={pillStyle}
                       disabled={!onEdit}
                       onMouseEnter={() => setHoveredRow(row.id)}
@@ -425,10 +462,11 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
                       onFocus={() => setHoveredRow(row.id)}
                       onBlur={() => setHoveredRow(null)}
                       onClick={() => { const item = itemMap.get(row.id); if (item) onEdit?.(item); }}
-                      aria-label={`Edit ${row.title}, due ${row.endLabel}`}
+                      aria-label={`Edit ${row.title}, due ${row.fullLabel}`}
+                      title={`${row.title} · ${row.fullLabel}`}
                     >
                       <span className="name">{row.title}</span>
-                      <span className="end">{row.endLabel}</span>
+                      {!row.compact && <span className="end">{row.endLabel}</span>}
                     </button>
                   </div>
                 );
@@ -440,8 +478,8 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
 
         <div className="tl-legend">
           {legendItems.map(li => {
-            const isActive = activeTone === li.tone;
-            const isDimmed = activeTone !== null && activeTone !== li.tone;
+            const isActive = priorityFilter === li.tone || (priorityFilter === null && activeTone === li.tone);
+            const isDimmed = priorityFilter === null && activeTone !== null && activeTone !== li.tone;
             const legendStyle = {
               "--tl-opacity": isDimmed ? 0.4 : 1,
               "--tl-legend-shift": isActive ? "translateX(5px)" : "translateX(0)",
@@ -451,16 +489,20 @@ export default function TimelineGantt({ items, onEdit }: TimelineGanttProps) {
             } as CSSProperties;
 
             return (
-              <div
+              <button
+                type="button"
                 key={li.label}
                 className="tl-ld"
                 style={legendStyle}
-                onMouseEnter={() => setHoveredTone(li.tone)}
+                onMouseEnter={() => { if (priorityFilter === null) setHoveredTone(li.tone); }}
                 onMouseLeave={() => setHoveredTone(null)}
+                onClick={() => setPriorityFilter(current => current === li.tone ? null : li.tone)}
+                aria-pressed={priorityFilter === li.tone}
+                title={priorityFilter === li.tone ? `Clear ${li.label.toLowerCase()} priority filter` : `Show ${li.label.toLowerCase()} priority items`}
               >
                 <span className="sw" style={{ background: li.color }} />
                 {li.label}
-              </div>
+              </button>
             );
           })}
         </div>
