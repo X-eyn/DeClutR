@@ -20,6 +20,7 @@ import AgendaCard from "@/components/dashboard/widgets/AgendaCard";
 import MiniCalendar from "@/components/dashboard/widgets/MiniCalendar";
 import QuickNotes from "@/components/dashboard/widgets/QuickNotes";
 import InsightsCard from "@/components/dashboard/widgets/InsightsCard";
+import { DragCanvas, DragCard, ResetLayoutBtn } from "@/components/dashboard/DragCanvas";
 import { interpretTimeLeft } from "@/lib/time";
 import type { TemporalItemWithRelations, DashboardStats, CreateItemInput } from "@/types";
 
@@ -381,11 +382,12 @@ export default function CommandCenter({ googleConnected, user }: CommandCenterPr
         .view-all-btn:hover { border-color: var(--indigo); color: var(--indigo); }
         .view-all-btn.active { background: var(--indigo-soft); border-color: var(--indigo-soft-2); color: var(--indigo-deep); }
 
-        /* ===== DASHBOARD ROWS ===== */
-        .dash-row { display: grid; gap: 18px; margin-bottom: 18px; }
-        .dash-row-1 { grid-template-columns: 7fr 2fr 3fr; }
-        .dash-row-2 { grid-template-columns: 4fr 5fr 3fr; }
-        .dash-row-3 { grid-template-columns: 4fr 4fr 3fr 3fr; }
+        /* ===== DRAG CANVAS ===== */
+        .drag-hint {
+          display: inline-flex; align-items: center; gap: 6px;
+          font-size: 11.5px; color: var(--mut-2); padding: 4px 0;
+          user-select: none;
+        }
 
         /* ===== LIST VIEW ===== */
         .cc-filters { display: flex; align-items: center; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -558,7 +560,7 @@ export default function CommandCenter({ googleConnected, user }: CommandCenterPr
             <div className="h-title">Your Time at a Glance</div>
             <div className="h-sub">Understand your deadlines, events, and free time instantly.</div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {items.length === 0 && (
               <button className="seed-btn" onClick={handleSeed} disabled={seeding}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -567,6 +569,7 @@ export default function CommandCenter({ googleConnected, user }: CommandCenterPr
                 {seeding ? "Loading…" : "Load demo data"}
               </button>
             )}
+            {!showListView && <ResetLayoutBtn />}
             <button
               className={`view-all-btn${showListView ? " active" : ""}`}
               onClick={() => { setListView(v => !v); if (listView) setSearch(""); }}
@@ -625,32 +628,50 @@ export default function CommandCenter({ googleConnected, user }: CommandCenterPr
           </>
         ) : (
           /* ---- Dashboard View ---- */
-          <>
-            {/* ROW 1: Stat Cards (7fr) | Weekly Workload (2fr) | Time Allocation (3fr) */}
-            <div className="dash-row dash-row-1">
+          <DragCanvas>
+            <DragCard id="stats">
               <StatCards stats={stats} items={items} onEdit={setEditItem} onComplete={handleComplete} onDelete={handleDelete} />
+            </DragCard>
+
+            <DragCard id="workload">
               <WorkloadChart items={items} onEdit={setEditItem} onComplete={handleComplete} onDelete={handleDelete} />
+            </DragCard>
+
+            <DragCard id="timealloc">
               <TimeAllocationDonut items={items} onEdit={setEditItem} onComplete={handleComplete} onDelete={handleDelete} />
-            </div>
+            </DragCard>
 
-            {/* ROW 2: Heatmap (4fr) | Timeline (5fr) | Free Windows (3fr) */}
-            <div className="dash-row dash-row-2">
+            <DragCard id="heatmap">
               <HeatmapCard items={items} onEdit={setEditItem} />
-              <TimelineGantt items={items} onEdit={setEditItem} />
-              <FreeTimeWindows items={items} />
-            </div>
+            </DragCard>
 
-            {/* ROW 3: Deadlines (4fr) | Agenda (4fr) | Calendar (3fr) | Notes+Insights (3fr) */}
-            <div className="dash-row dash-row-3">
+            <DragCard id="timeline">
+              <TimelineGantt items={items} onEdit={setEditItem} />
+            </DragCard>
+
+            <DragCard id="freetime">
+              <FreeTimeWindows items={items} />
+            </DragCard>
+
+            <DragCard id="deadlines">
               <DeadlinesList items={items} onEdit={setEditItem} />
+            </DragCard>
+
+            <DragCard id="agenda">
               <AgendaCard items={items} onEdit={setEditItem} />
+            </DragCard>
+
+            <DragCard id="calendar">
               <MiniCalendar items={items} />
+            </DragCard>
+
+            <DragCard id="stack">
               <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
                 <QuickNotes items={items} onComplete={handleComplete} onAddItem={() => router.push("/dashboard/notes")} />
                 <InsightsCard stats={stats} items={items} />
               </div>
-            </div>
-          </>
+            </DragCard>
+          </DragCanvas>
         )}
       </div>
 
