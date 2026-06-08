@@ -47,6 +47,8 @@ model User {
 
   temporalItems TemporalItem[]
   syncLogs      SyncLog[]
+  syncRuns      SyncRun[]
+  googleSyncState GoogleSyncState?
 }
 
 model VerificationToken {
@@ -101,6 +103,10 @@ model TemporalItem {
   // Google sync
   googleCalendarEventId String?
   googleTaskId          String?
+  googleTaskListId      String?
+  googleUpdatedAt       DateTime?
+  googleDeletedAt       DateTime?
+  syncOrigin            String   @default("LOCAL")
   lastSyncedAt          DateTime?
 
   // Reminder settings (minutes before dueDate)
@@ -113,6 +119,46 @@ model TemporalItem {
   updatedAt   DateTime @updatedAt
 
   @@index([userId, dueDate])
+  @@index([userId, status])
+  @@index([userId, googleCalendarEventId])
+  @@index([userId, googleTaskId])
+}
+
+model GoogleSyncState {
+  userId                 String   @id
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  connected              Boolean  @default(false)
+  tokenHealthy           Boolean  @default(false)
+  reconnectRequired      Boolean  @default(false)
+  scopes                 String[] @default([])
+  lastSuccessfulImportAt DateTime?
+  reconnectReason        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SyncRun {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  mode      String
+  source    String
+  status    String
+  phase     String
+  counts    Json?
+  errorSummary String?
+
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  syncLogs SyncLog[]
+
+  @@index([userId, createdAt])
   @@index([userId, status])
 }
 
@@ -146,6 +192,8 @@ model SyncLog {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   action    String   // "CREATE_CALENDAR_EVENT" | "UPDATE_CALENDAR_EVENT" | "CREATE_TASK" | etc.
+  syncRunId String?
+  syncRun   SyncRun? @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
   itemId    String?
   itemTitle String?
   status    String   // "SUCCESS" | "ERROR"
@@ -155,4 +203,5 @@ model SyncLog {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+  @@index([syncRunId])
 }

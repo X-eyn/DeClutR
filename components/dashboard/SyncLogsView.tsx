@@ -1,14 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { format } from "date-fns";
+import { signIn } from "next-auth/react";
 import {
   AlertCircle,
   Calendar,
   CheckCircle,
   CheckSquare,
   Clock3,
+  Download,
   Edit2,
   RefreshCw,
   ShieldCheck,
@@ -16,15 +17,21 @@ import {
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { SyncLogEntry } from "@/types";
+import { useItems } from "@/components/dashboard/ItemsProvider";
+import type { GoogleConnectionStatus, SyncLogEntry, SyncRunEntry } from "@/types";
 
 interface SyncLogsViewProps {
   initialLogs: SyncLogEntry[];
-  googleConnected: boolean;
-  scopes: string;
+  initialConnectionStatus: GoogleConnectionStatus;
+  initialSyncRun: SyncRunEntry | null;
 }
 
 type SyncStatusFilter = "ALL" | "PENDING" | "SUCCESS" | "ERROR";
+
+type SyncRunCounts = {
+  calendar: { created: number; updated: number; skipped: number; archived: number; errors: number };
+  tasks: { created: number; updated: number; skipped: number; archived: number; errors: number };
+};
 
 const ACTION_META: Record<
   string,
@@ -149,20 +156,41 @@ function statusMeta(status: string) {
   return STATUS_META[status as keyof typeof STATUS_META] ?? STATUS_META.PENDING;
 }
 
-export default function SyncLogsView({ initialLogs, googleConnected, scopes }: SyncLogsViewProps) {
+export default function SyncLogsView({ initialLogs, initialConnectionStatus, initialSyncRun }: SyncLogsViewProps) {
+  const { refreshItems } = useItems();
   const [logs, setLogs] = useState(initialLogs);
+  const [connectionStatus, setConnectionStatus] = useState(initialConnectionStatus);
+  const [syncRun, setSyncRun] = useState<SyncRunEntry | null>(initialSyncRun);
   const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<SyncStatusFilter>("ALL");
   const [error, setError] = useState<string | null>(null);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [reconnectRequired, setReconnectRequired] = useState(false);
+
+  async function loadLogs() {
+    const res = await fetch("/api/sync/logs?limit=50", { cache: "no-store" });
+    if (!res.ok) throw new Error("Unable to refresh sync history right now.");
+    setLogs(await res.json());
+  }
+
+  async function loadConnectionStatus() {
+    const res = await fetch("/api/google/connect", { cache: "no-store" });
+    if (!res.ok) throw new Error("Unable to refresh Google connection status.");
+    setConnectionStatus(await res.json());
+  }
+
+  async function loadLatestRun() {
+    const res = await fetch("/api/google/sync-runs/latest", { cache: "no-store" });
+    if (!res.ok) throw new Error("Unable to refresh Google sync progress.");
+    setSyncRun(await res.json());
+  }
 
   async function refresh() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/sync/logs?limit=50", { cache: "no-store" });
-      if (!res.ok) throw new Error("Unable to refresh sync history right now.");
-      const data = await res.json();
-      setLogs(data);
+      await Promise.all([loadLogs(), loadConnectionStatus(), loadLatestRun()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to refresh sync history right now.");
     } finally {
@@ -170,8 +198,55 @@ export default function SyncLogsView({ initialLogs, googleConnected, scopes }: S
     }
   }
 
-  const hasCalendarScope = scopes.includes("calendar.events");
-  const hasTasksScope = scopes.includes("tasks");
+  async function importFromGoogle() {
+    setImporting(true);
+    setError(null);
+    setImportMessage(null);
+    setReconnectRequired(false);
+
+    try {
+      const res = await fetch("/api/google/sync-runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "import" }),
+      });
+      const data = (await res.json()) as SyncRunEntry & {
+        error?: string;
+        reconnectRequired?: boolean;
+      };
+      if (data.reconnectRequired) setReconnectRequired(true);
+      if (!res.ok) throw new Error(data.error ?? "Unable to import Google data right now.");
+
+      setSyncRun(data);
+      await Promise.all([loadLogs(), refreshItems(), loadConnectionStatus()]);
+      const counts = data.counts as SyncRunCounts | null;
+      setImportMessage(counts ? formatRunSummary(counts) : "Google import finished.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to import Google data right now.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function reconnectGoogle() {
+    void signIn(
+      "google",
+      { callbackUrl: "/dashboard/sync" },
+      { prompt: "consent", access_type: "offline" }
+    );
+  }
+
+  const googleConnected = connectionStatus.connected && connectionStatus.tokenHealthy;
+  const hasCalendarScope = googleConnected && connectionStatus.hasCalendarScope;
+  const hasTasksScope = googleConnected && connectionStatus.hasTasksScope;
+  const runCounts = syncRun?.counts as SyncRunCounts | null;
+  const connectionLabel = connectionStatus.reconnectRequired
+    ? "Needs reconnect"
+    : googleConnected && hasCalendarScope && hasTasksScope
+      ? "Connected"
+      : googleConnected
+        ? "Missing scopes"
+        : "Offline";
 
   const filteredLogs = useMemo(() => {
     return statusFilter === "ALL" ? logs : logs.filter((log) => log.status === statusFilter);
@@ -199,6 +274,10 @@ export default function SyncLogsView({ initialLogs, googleConnected, scopes }: S
     { value: "ERROR", label: "Failed", count: summary.error },
   ];
 
+  function formatRunSummary(counts: SyncRunCounts) {
+    return `Calendar: ${counts.calendar.created} added, ${counts.calendar.updated} updated, ${counts.calendar.archived} archived. Tasks: ${counts.tasks.created} added, ${counts.tasks.updated} updated, ${counts.tasks.archived} archived.`;
+  }
+
   return (
     <>
       <style>{`
@@ -212,6 +291,13 @@ export default function SyncLogsView({ initialLogs, googleConnected, scopes }: S
           justify-content: space-between;
           gap: 16px;
           margin-bottom: 18px;
+        }
+        .sync-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+          justify-content: flex-end;
         }
         .sync-title {
           margin: 0;
@@ -252,6 +338,17 @@ export default function SyncLogsView({ initialLogs, googleConnected, scopes }: S
         .sync-refresh:disabled {
           opacity: .62;
           cursor: default;
+        }
+        .sync-import {
+          border-color: var(--indigo);
+          background: var(--indigo);
+          color: white;
+          box-shadow: 0 10px 24px rgba(99, 102, 241, 0.18);
+        }
+        .sync-import:hover:not(:disabled) {
+          border-color: var(--indigo-deep);
+          background: var(--indigo-deep);
+          color: white;
         }
         .sync-stats {
           display: grid;
@@ -463,6 +560,85 @@ export default function SyncLogsView({ initialLogs, googleConnected, scopes }: S
           font-size: 12px;
           font-weight: 600;
         }
+        .sync-error-action {
+          margin-top: 10px;
+          padding: 8px 11px;
+          border: 0;
+          border-radius: 10px;
+          background: #be123c;
+          color: white;
+          font: inherit;
+          font-size: 12px;
+          font-weight: 750;
+          cursor: pointer;
+        }
+        .sync-success {
+          margin-bottom: 12px;
+          padding: 12px 14px;
+          border-radius: 14px;
+          border: 1px solid #a7f3d0;
+          background: #ecfdf5;
+          color: #047857;
+          font-size: 12px;
+          font-weight: 650;
+        }
+        .sync-run {
+          margin-bottom: 18px;
+          border: 1px solid #dbe3ff;
+          background: linear-gradient(135deg, #f8faff 0%, #ffffff 58%, #f7f5ff 100%);
+          border-radius: 22px;
+          padding: 16px 18px;
+          box-shadow: var(--shadow-sm);
+        }
+        .sync-run-top {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 14px;
+          margin-bottom: 12px;
+        }
+        .sync-run-title {
+          font-size: 14px;
+          font-weight: 800;
+          color: var(--ink);
+        }
+        .sync-run-sub {
+          margin-top: 4px;
+          font-size: 12px;
+          color: var(--mut);
+        }
+        .sync-run-status {
+          padding: 6px 10px;
+          border-radius: 999px;
+          background: #eef2ff;
+          color: var(--indigo);
+          font-size: 11px;
+          font-weight: 850;
+          white-space: nowrap;
+        }
+        .sync-run-counts {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .sync-run-count {
+          border: 1px solid var(--line);
+          border-radius: 14px;
+          background: rgba(255,255,255,.78);
+          padding: 10px 11px;
+        }
+        .sync-run-count-value {
+          font-size: 18px;
+          font-weight: 850;
+          color: var(--ink);
+          line-height: 1;
+        }
+        .sync-run-count-label {
+          margin-top: 5px;
+          font-size: 10.5px;
+          font-weight: 750;
+          color: var(--mut);
+        }
         .sync-list {
           display: flex;
           flex-direction: column;
@@ -566,10 +742,28 @@ export default function SyncLogsView({ initialLogs, googleConnected, scopes }: S
               immediately in the app, and Google updates continue in the background.
             </p>
           </div>
-          <button onClick={refresh} disabled={loading} className="sync-refresh">
-            <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
-            {loading ? "Refreshing..." : "Refresh history"}
-          </button>
+          <div className="sync-header-actions">
+            {googleConnected && (
+              <button
+                onClick={importFromGoogle}
+                disabled={importing || loading}
+                className="sync-refresh sync-import"
+              >
+                <Download className={cn("w-4 h-4", importing && "animate-pulse")} />
+                {importing ? "Importing Google data..." : "Run Google Import"}
+              </button>
+            )}
+            {!googleConnected && (
+              <button type="button" onClick={reconnectGoogle} className="sync-refresh sync-import">
+                <Download className="w-4 h-4" />
+                Reconnect Google
+              </button>
+            )}
+            <button onClick={refresh} disabled={loading || importing} className="sync-refresh">
+              <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
+              {loading ? "Refreshing..." : "Refresh history"}
+            </button>
+          </div>
         </div>
 
         <div className="sync-stats">
@@ -578,8 +772,8 @@ export default function SyncLogsView({ initialLogs, googleConnected, scopes }: S
               <span className="sync-stat-dot" style={{ background: googleConnected ? "#10b981" : "#ef4444" }} />
               Google account
             </div>
-            <div className="sync-stat-value">{googleConnected ? "Connected" : "Offline"}</div>
-            <div className="sync-stat-note">{googleConnected ? "Ready to sync with Google services" : "Reconnect Google to resume sync"}</div>
+            <div className="sync-stat-value">{connectionLabel}</div>
+            <div className="sync-stat-note">{connectionStatus.message}</div>
           </div>
 
           <div className="sync-stat">
@@ -608,6 +802,43 @@ export default function SyncLogsView({ initialLogs, googleConnected, scopes }: S
             <div className="sync-stat-value">{summary.error}</div>
             <div className="sync-stat-note">{summary.error === 0 ? "No failed syncs in the recent history" : "Review failed entries and reconnect if needed"}</div>
           </div>
+        </div>
+
+        <div className="sync-run">
+          <div className="sync-run-top">
+            <div>
+              <div className="sync-run-title">Manual Google import progress</div>
+              <div className="sync-run-sub">
+                {syncRun
+                  ? `Latest run: ${syncRun.phase.toLowerCase().replaceAll("_", " ")} · ${format(new Date(syncRun.createdAt), "MMM d, h:mm a")}`
+                  : "No manual import has run yet."}
+              </div>
+            </div>
+            <div className="sync-run-status">{importing ? "RUNNING" : syncRun?.status ?? "IDLE"}</div>
+          </div>
+          <div className="sync-run-counts">
+            <div className="sync-run-count">
+              <div className="sync-run-count-value">{(runCounts?.calendar.created ?? 0) + (runCounts?.tasks.created ?? 0)}</div>
+              <div className="sync-run-count-label">Added</div>
+            </div>
+            <div className="sync-run-count">
+              <div className="sync-run-count-value">{(runCounts?.calendar.updated ?? 0) + (runCounts?.tasks.updated ?? 0)}</div>
+              <div className="sync-run-count-label">Updated</div>
+            </div>
+            <div className="sync-run-count">
+              <div className="sync-run-count-value">{(runCounts?.calendar.archived ?? 0) + (runCounts?.tasks.archived ?? 0)}</div>
+              <div className="sync-run-count-label">Archived</div>
+            </div>
+            <div className="sync-run-count">
+              <div className="sync-run-count-value">{(runCounts?.calendar.skipped ?? 0) + (runCounts?.tasks.skipped ?? 0)}</div>
+              <div className="sync-run-count-label">Skipped</div>
+            </div>
+            <div className="sync-run-count">
+              <div className="sync-run-count-value">{(runCounts?.calendar.errors ?? 0) + (runCounts?.tasks.errors ?? 0)}</div>
+              <div className="sync-run-count-label">Errors</div>
+            </div>
+          </div>
+          {syncRun?.errorSummary && <div className="sync-error" style={{ marginTop: 12, marginBottom: 0 }}>{syncRun.errorSummary}</div>}
         </div>
 
         <div className="sync-grid">
@@ -647,7 +878,9 @@ export default function SyncLogsView({ initialLogs, googleConnected, scopes }: S
                   <div className="sync-health-main">
                     <div className="sync-health-label">Calendar scope</div>
                     <div className="sync-health-note">
-                      Grants event creation and reminder sync through the Google Calendar API.
+                      {googleConnected
+                        ? "Grants event creation and reminder sync through the Google Calendar API."
+                        : "Reconnect Google so this app can receive a fresh Calendar token."}
                     </div>
                   </div>
                   <span
@@ -667,7 +900,9 @@ export default function SyncLogsView({ initialLogs, googleConnected, scopes }: S
                   <div className="sync-health-main">
                     <div className="sync-health-label">Tasks scope</div>
                     <div className="sync-health-note">
-                      Enables checklist and due-date sync to Google Tasks.
+                      {googleConnected
+                        ? "Enables checklist and due-date sync to Google Tasks."
+                        : "Reconnect Google so this app can receive a fresh Tasks token."}
                     </div>
                   </div>
                   <span
@@ -694,9 +929,9 @@ export default function SyncLogsView({ initialLogs, googleConnected, scopes }: S
                   logged here as they succeed or fail.
                 </div>
                 {!googleConnected && (
-                  <Link href="/api/auth/signin" className="sync-connect">
+                  <button type="button" onClick={reconnectGoogle} className="sync-connect">
                     Connect Google account
-                  </Link>
+                  </button>
                 )}
               </div>
             </div>
@@ -728,7 +963,19 @@ export default function SyncLogsView({ initialLogs, googleConnected, scopes }: S
                 </div>
               </div>
 
-              {error && <div className="sync-error">{error}</div>}
+              {error && (
+                <div className="sync-error">
+                  {error}
+                  {reconnectRequired && (
+                    <div>
+                      <button type="button" onClick={reconnectGoogle} className="sync-error-action">
+                        Reconnect Google
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {importMessage && <div className="sync-success">{importMessage}</div>}
 
               {filteredLogs.length === 0 ? (
                 <div className="sync-empty">

@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "./prisma";
+import { GoogleAuthService } from "@/lib/google-services";
 
 const authDebugEnabled = ["1", "true", "yes", "on"].includes(
   (process.env.AUTH_DEBUG ?? process.env.NEXTAUTH_DEBUG ?? "").toLowerCase()
@@ -35,7 +36,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async signIn({ user, profile }) {
+    async signIn({ user, profile, account }) {
       try {
         if (!user?.email) {
           console.error("[Auth] Sign-in failed: no email from Google");
@@ -53,6 +54,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             ...(profileImage ? { image: profileImage } : {}),
           },
         });
+
+        await GoogleAuthService.saveFreshTokensFromSignIn(user.id, account);
 
         authDebugLog("[Auth] Sign-in attempt:", user.email);
         return true;

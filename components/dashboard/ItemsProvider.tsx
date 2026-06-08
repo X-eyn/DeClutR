@@ -80,6 +80,10 @@ function makeOptimisticItem(data: CreateItemInput): TemporalItemWithRelations {
     rrule: null,
     googleCalendarEventId: null,
     googleTaskId: null,
+    googleTaskListId: null,
+    googleUpdatedAt: null,
+    googleDeletedAt: null,
+    syncOrigin: "LOCAL",
     lastSyncedAt: null,
     reminderMinutes: data.reminderMinutes ?? [],
     tags: (data.tags ?? []).map((name, index) => ({

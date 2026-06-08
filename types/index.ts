@@ -1,4 +1,4 @@
-import type { TemporalItem, ChecklistItem, Tag, SyncLog } from "@prisma/client";
+import type { TemporalItem, ChecklistItem, Tag, SyncLog, SyncRun, GoogleSyncState } from "@prisma/client";
 
 export type TemporalItemWithRelations = TemporalItem & {
   checklists: ChecklistItem[];
@@ -6,6 +6,19 @@ export type TemporalItemWithRelations = TemporalItem & {
 };
 
 export type SyncLogEntry = SyncLog;
+export type SyncRunEntry = SyncRun;
+export type GoogleSyncStateEntry = GoogleSyncState;
+
+export type GoogleConnectionStatus = {
+  connected: boolean;
+  tokenHealthy: boolean;
+  reconnectRequired: boolean;
+  hasCalendarScope: boolean;
+  hasTasksScope: boolean;
+  scopes: string[];
+  lastSuccessfulImportAt: string | null;
+  message: string;
+};
 
 export type CreateItemInput = {
   title: string;
