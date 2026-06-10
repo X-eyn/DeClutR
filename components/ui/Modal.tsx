@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 
 interface ModalProps {
   open: boolean;
@@ -11,21 +12,31 @@ interface ModalProps {
 
 export default function Modal({ open, onClose, title, children }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
 
   useEffect(() => {
     if (!open) return;
     const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const previousOverflow = document.body.style.overflow;
+
+    document.body.style.overflow = "hidden";
     document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
+    closeButtonRef.current?.focus();
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKey);
+    };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <>
       <style>{`
         .modal-overlay {
-          position: fixed; inset: 0; z-index: 50;
+          position: fixed; inset: 0; z-index: 10000;
           display: flex; align-items: center; justify-content: center;
           background: rgba(15,23,42,.35); backdrop-filter: blur(4px);
           padding: 16px;
@@ -55,11 +66,23 @@ export default function Modal({ open, onClose, title, children }: ModalProps) {
         ref={overlayRef}
         className="modal-overlay"
         onClick={e => { if (e.target === overlayRef.current) onClose(); }}
+        role="presentation"
       >
-        <div className="modal-box">
+        <div
+          className="modal-box"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+        >
           <div className="modal-head">
-            <div className="modal-title">{title}</div>
-            <button className="modal-close" onClick={onClose}>
+            <div id={titleId} className="modal-title">{title}</div>
+            <button
+              ref={closeButtonRef}
+              type="button"
+              className="modal-close"
+              onClick={onClose}
+              aria-label={`Close ${title}`}
+            >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
               </svg>
@@ -68,6 +91,7 @@ export default function Modal({ open, onClose, title, children }: ModalProps) {
           <div className="modal-body">{children}</div>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

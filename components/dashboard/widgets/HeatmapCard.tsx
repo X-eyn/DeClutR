@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import { addDays, format, isSameDay, startOfDay, startOfWeek } from "date-fns";
+import Modal from "@/components/ui/Modal";
 import type { TemporalItemWithRelations } from "@/types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -454,58 +455,6 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
         }
         .hm-scale-item.dim { opacity: 0.3; }
 
-        .hm-slot-modal {
-          position: absolute;
-          top: 54px;
-          right: 16px;
-          width: min(320px, calc(100% - 32px));
-          max-height: calc(100% - 76px);
-          overflow: auto;
-          background: rgba(255,255,255,0.96);
-          border: 1px solid rgba(226,232,240,0.95);
-          border-radius: 14px;
-          box-shadow: 0 18px 46px rgba(15,23,42,0.16);
-          padding: 12px;
-          z-index: 8;
-          animation: hm-modal-in 0.22s cubic-bezier(0.34,1.56,0.64,1);
-          backdrop-filter: blur(12px);
-        }
-        @keyframes hm-modal-in {
-          from { opacity: 0; transform: translateY(8px) scale(0.96); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        .hm-slot-head {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 10px;
-          margin-bottom: 10px;
-        }
-        .hm-slot-kicker {
-          color: var(--mut);
-          font-size: 11px;
-          font-weight: 650;
-        }
-        .hm-slot-title {
-          color: var(--ink);
-          font-size: 14px;
-          font-weight: 800;
-          margin-top: 2px;
-        }
-        .hm-close {
-          appearance: none;
-          border: 0;
-          background: var(--line-2);
-          color: var(--mut);
-          width: 26px;
-          height: 26px;
-          border-radius: 8px;
-          cursor: pointer;
-          font-weight: 800;
-          line-height: 1;
-          transition: background 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
-        }
-        .hm-close:hover { background: var(--indigo-soft); color: var(--indigo); transform: scale(1.06); }
         .hm-slot-list { display: flex; flex-direction: column; gap: 8px; }
         .hm-slot-item {
           appearance: none;
@@ -700,27 +649,24 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
           <span>Critical</span>
         </div>
 
-        {selectedCell && selectedCell.items.length > 0 && (
-          <div className="hm-slot-modal" role="dialog" aria-label="Scheduled items in selected time slot">
-            <div className="hm-slot-head">
-              <div>
-                <div className="hm-slot-kicker">{format(selectedCell.date, "EEEE, MMM d")}</div>
-                <div className="hm-slot-title">
-                  {selectedCell.label} | {plural(selectedCell.items.length, "item")}
-                </div>
-              </div>
-              <button type="button" className="hm-close" aria-label="Close slot details" onClick={() => setSelectedCell(null)}>
-                x
-              </button>
-            </div>
-
+        <Modal
+          open={Boolean(selectedCell && selectedCell.items.length > 0)}
+          onClose={() => setSelectedCell(null)}
+          title={selectedCell
+            ? `${format(selectedCell.date, "EEEE, MMM d")} | ${selectedCell.label}`
+            : "Scheduled items"}
+        >
+          {selectedCell && (
             <div className="hm-slot-list">
               {selectedCell.items.map(entry => (
                 <button
                   key={entry.item.id}
                   type="button"
                   className="hm-slot-item"
-                  onClick={() => onEdit?.(entry.item)}
+                  onClick={() => {
+                    setSelectedCell(null);
+                    onEdit?.(entry.item);
+                  }}
                 >
                   <div className="hm-slot-item-title">{entry.item.title}</div>
                   <div className="hm-slot-item-meta">
@@ -731,8 +677,8 @@ export default function HeatmapCard({ items, onEdit }: HeatmapCardProps) {
                 </button>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </Modal>
       </div>
     </>
   );
