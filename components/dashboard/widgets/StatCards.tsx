@@ -9,12 +9,15 @@ import ItemCard from "@/components/dashboard/ItemCard";
 import type { DashboardStats, TemporalItemWithRelations } from "@/types";
 
 interface StatCardsProps {
+  kind: StatCardKind;
   stats: DashboardStats;
   items: TemporalItemWithRelations[];
   onEdit?: (item: TemporalItemWithRelations) => void;
   onComplete?: (id: string) => void;
   onDelete?: (id: string) => void;
 }
+
+export type StatCardKind = "critical" | "today" | "week" | "month";
 
 function dedupeById(list: TemporalItemWithRelations[]) {
   const seen = new Set<string>();
@@ -25,7 +28,7 @@ function dedupeById(list: TemporalItemWithRelations[]) {
   });
 }
 
-export default function StatCards({ items, onEdit, onComplete, onDelete }: StatCardsProps) {
+export default function StatCards({ kind, items, onEdit, onComplete, onDelete }: StatCardsProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
   const [modalItems, setModalItems] = useState<TemporalItemWithRelations[]>([]);
@@ -110,12 +113,9 @@ export default function StatCards({ items, onEdit, onComplete, onDelete }: StatC
   return (
     <>
       <style>{`
-        .stat-row {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-          gap: 10px;
+        .stat-single {
           height: 100%;
-          align-items: stretch;
+          min-height: 0;
         }
         .stat {
           background: var(--panel);
@@ -369,10 +369,11 @@ export default function StatCards({ items, onEdit, onComplete, onDelete }: StatC
         .stat-modal-list { display: flex; flex-direction: column; gap: 10px; }
         .stat-modal-empty { text-align: center; padding: 32px 0; color: var(--mut); font-size: 13.5px; }
       `}</style>
-      <div className="stat-row">
+      <div className="stat-single">
 
         {/* Card 1: Next Critical Deadline */}
-        <div className="stat" onClick={() => openModal("Critical & Urgent Items", allCriticalItems)}>
+        {kind === "critical" && (
+          <div className="stat" onClick={() => openModal("Critical & Urgent Items", allCriticalItems)}>
           <div className="stat-header">
             <div className="stat-ico" style={{ background: "var(--red-tint)", color: "var(--red)" }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -429,10 +430,12 @@ export default function StatCards({ items, onEdit, onComplete, onDelete }: StatC
               <div className="stat-meta">No urgent items right now</div>
             )}
           </div>
-        </div>
+          </div>
+        )}
 
         {/* Card 2: Today's Schedule */}
-        <div className="stat" onClick={() => openModal("Today's Schedule", todayEvents)}>
+        {kind === "today" && (
+          <div className="stat" onClick={() => openModal("Today's Schedule", todayEvents)}>
           <div className="stat-header">
             <div className="stat-ico" style={{ background: "var(--indigo-soft)", color: "var(--indigo)" }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -478,10 +481,12 @@ export default function StatCards({ items, onEdit, onComplete, onDelete }: StatC
             <div style={{ flex: 1 }} />
             <Link className="stat-link" href="/dashboard/calendar" onClick={e => e.stopPropagation()}>View agenda →</Link>
           </div>
-        </div>
+          </div>
+        )}
 
         {/* Card 3: This Week */}
-        <div className="stat" onClick={() => openModal("This Week's Items", allWeekItems)}>
+        {kind === "week" && (
+          <div className="stat" onClick={() => openModal("This Week's Items", allWeekItems)}>
           <div className="stat-header">
             <div className="stat-ico" style={{ background: "var(--green-tint)", color: "var(--green)" }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -539,10 +544,12 @@ export default function StatCards({ items, onEdit, onComplete, onDelete }: StatC
               </div>
             </div>
           </div>
-        </div>
+          </div>
+        )}
 
         {/* Card 4: This Month */}
-        <div className="stat" onClick={() => openModal("This Month's Items", allMonthItems)}>
+        {kind === "month" && (
+          <div className="stat" onClick={() => openModal("This Month's Items", allMonthItems)}>
           <div className="stat-header">
             <div className="stat-ico" style={{ background: "var(--violet-soft)", color: "var(--violet)" }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -605,7 +612,8 @@ export default function StatCards({ items, onEdit, onComplete, onDelete }: StatC
               </div>
             </div>
           </div>
-        </div>
+          </div>
+        )}
 
       </div>
 

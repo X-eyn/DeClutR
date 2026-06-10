@@ -629,8 +629,20 @@ export default function CommandCenter({ googleConnected, user }: CommandCenterPr
         ) : (
           /* ---- Dashboard View ---- */
           <DragCanvas>
-            <DragCard id="stats">
-              <StatCards stats={stats} items={items} onEdit={setEditItem} onComplete={handleComplete} onDelete={handleDelete} />
+            <DragCard id="stat-critical">
+              <StatCards kind="critical" stats={stats} items={items} onEdit={setEditItem} onComplete={handleComplete} onDelete={handleDelete} />
+            </DragCard>
+
+            <DragCard id="stat-today">
+              <StatCards kind="today" stats={stats} items={items} onEdit={setEditItem} onComplete={handleComplete} onDelete={handleDelete} />
+            </DragCard>
+
+            <DragCard id="stat-week">
+              <StatCards kind="week" stats={stats} items={items} onEdit={setEditItem} onComplete={handleComplete} onDelete={handleDelete} />
+            </DragCard>
+
+            <DragCard id="stat-month">
+              <StatCards kind="month" stats={stats} items={items} onEdit={setEditItem} onComplete={handleComplete} onDelete={handleDelete} />
             </DragCard>
 
             <DragCard id="workload">
@@ -665,11 +677,12 @@ export default function CommandCenter({ googleConnected, user }: CommandCenterPr
               <MiniCalendar items={items} />
             </DragCard>
 
-            <DragCard id="stack">
-              <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                <QuickNotes items={items} onComplete={handleComplete} onAddItem={() => router.push("/dashboard/notes")} />
-                <InsightsCard stats={stats} items={items} />
-              </div>
+            <DragCard id="quicknotes">
+              <QuickNotes items={items} onComplete={handleComplete} onAddItem={() => router.push("/dashboard/notes")} />
+            </DragCard>
+
+            <DragCard id="insights">
+              <InsightsCard stats={stats} items={items} />
             </DragCard>
           </DragCanvas>
         )}
