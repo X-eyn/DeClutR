@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 
 interface ModalProps {
@@ -10,10 +10,17 @@ interface ModalProps {
   children: React.ReactNode;
 }
 
+const subscribeToHydration = () => () => {};
+
 export default function Modal({ open, onClose, title, children }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
+  const mounted = useSyncExternalStore(
+    subscribeToHydration,
+    () => true,
+    () => false,
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -30,7 +37,7 @@ export default function Modal({ open, onClose, title, children }: ModalProps) {
     };
   }, [open, onClose]);
 
-  if (!open || typeof document === "undefined") return null;
+  if (!mounted || !open) return null;
 
   return createPortal(
     <>
